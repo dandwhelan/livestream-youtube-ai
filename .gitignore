@@ -1,0 +1,12 @@
+.env
+credentials/
+clips_output/
+snapshots/
+logs/
+venv/
+__pycache__/
+*.pyc
+mediamtx.exe
+mediamtx
+offline.mp4
+.claude/
