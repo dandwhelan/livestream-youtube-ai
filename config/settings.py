@@ -1,9 +1,13 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+import json
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_OVERRIDES_PATH = Path("config/overrides.json")
+_TUNING_KEYS = ("motion_threshold", "motion_min_area", "motion_min_area_nest", "entrance_zone_bottom")
 
 
 @dataclass
@@ -21,6 +25,10 @@ class Settings:
 
     # Motion zones (as fraction of frame height, 0.0 = top, 1.0 = bottom)
     entrance_zone_bottom: float = 0.12  # top 12% of frame is the entrance
+
+    # Exclusion zones: list of [x1, y1, x2, y2] in frame fractions (0.0–1.0).
+    # Contour centroids inside any zone are silently ignored.
+    exclusion_zones: list = field(default_factory=list)
 
     # Clips & snapshots
     clips_dir: Path = Path("clips_output")
@@ -60,3 +68,31 @@ class Settings:
 
 
 settings = Settings()
+
+
+def load_overrides() -> None:
+    """Apply saved tuning + exclusion zones from config/overrides.json (if it exists)."""
+    if not _OVERRIDES_PATH.exists():
+        return
+    try:
+        data = json.loads(_OVERRIDES_PATH.read_text(encoding="utf-8"))
+        for key in _TUNING_KEYS:
+            if key in data:
+                setattr(settings, key, type(getattr(settings, key))(data[key]))
+        if "exclusion_zones" in data:
+            settings.exclusion_zones = data["exclusion_zones"]
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Could not load overrides: %s", exc)
+
+
+def save_overrides() -> None:
+    """Persist current tuning + exclusion zones to config/overrides.json."""
+    data = {key: getattr(settings, key) for key in _TUNING_KEYS}
+    data["exclusion_zones"] = settings.exclusion_zones
+    try:
+        _OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _OVERRIDES_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Could not save overrides: %s", exc)

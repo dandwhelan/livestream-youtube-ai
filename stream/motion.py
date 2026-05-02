@@ -115,10 +115,24 @@ class MotionDetector:
         max_area_nest = 0
         contour_info: list[tuple] = []  # (x, y, w, h, area, zone, passed) — for debug overlay
 
+        fw = frame.shape[1]
+        fh = frame.shape[0]
+
         for c in contours:
             area = cv2.contourArea(c)
             x, y, w, h = cv2.boundingRect(c)
             center_y = y + h // 2
+
+            # Exclusion zone check — centroid in fractional coords
+            cx_frac = (x + w / 2) / fw
+            cy_frac = (y + h / 2) / fh
+            excluded = any(
+                ex1 <= cx_frac <= ex2 and ey1 <= cy_frac <= ey2
+                for ex1, ey1, ex2, ey2 in settings.exclusion_zones
+            )
+            if excluded:
+                contour_info.append((x, y, w, h, int(area), "excluded", False, True))
+                continue
 
             if center_y < entrance_cutoff:
                 zone_label = "entrance"
@@ -137,7 +151,7 @@ class MotionDetector:
                 if passed:
                     nest_motion = True
 
-            contour_info.append((x, y, w, h, int(area), zone_label, passed))
+            contour_info.append((x, y, w, h, int(area), zone_label, passed, False))
 
         motion_found = entrance_motion or nest_motion
 
@@ -221,11 +235,33 @@ class MotionDetector:
         cv2.putText(annotated, "NEST", (8, entrance_cutoff + 18),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1, cv2.LINE_AA)
 
-        # Contour boxes — green if passed threshold, dim red if rejected
-        for cx, cy, cw, ch, area, zone_label, passed in contour_info:
-            color = (60, 220, 60) if passed else (60, 60, 200)
+        # Exclusion zone overlays — semi-transparent magenta fills
+        if settings.exclusion_zones:
+            overlay = annotated.copy()
+            for ex1, ey1, ex2, ey2 in settings.exclusion_zones:
+                px1, py1 = int(ex1 * w), int(ey1 * h)
+                px2, py2 = int(ex2 * w), int(ey2 * h)
+                cv2.rectangle(overlay, (px1, py1), (px2, py2), (200, 0, 200), -1)
+            cv2.addWeighted(overlay, 0.25, annotated, 0.75, 0, annotated)
+            for ex1, ey1, ex2, ey2 in settings.exclusion_zones:
+                px1, py1 = int(ex1 * w), int(ey1 * h)
+                px2, py2 = int(ex2 * w), int(ey2 * h)
+                cv2.rectangle(annotated, (px1, py1), (px2, py2), (200, 0, 200), 2)
+                cv2.putText(annotated, "EXCLUDED", (px1 + 4, py1 + 16),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 0, 200), 1, cv2.LINE_AA)
+
+        # Contour boxes — green if passed, dim blue if rejected by threshold, grey if excluded
+        for cx, cy, cw, ch, area, zone_label, passed, excluded in contour_info:
+            if excluded:
+                color = (80, 80, 80)
+                label = f"X {area}"
+            elif passed:
+                color = (60, 220, 60)
+                label = f"{zone_label[0].upper()} {area}"
+            else:
+                color = (60, 60, 200)
+                label = f"{zone_label[0].upper()} {area}"
             cv2.rectangle(annotated, (cx, cy), (cx + cw, cy + ch), color, 1)
-            label = f"{zone_label[0].upper()} {area}"
             cv2.putText(annotated, label, (cx, max(10, cy - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
 
