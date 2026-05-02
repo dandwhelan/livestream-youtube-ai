@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from config.settings import settings
+from config.settings import settings, load_overrides
 from stream.reader import StreamReader
 from stream.motion import MotionDetector
 from stream.debug_server import start as start_debug_server
@@ -227,6 +227,9 @@ def main() -> None:
     logger.info("Bird Box Stream Processor starting...")
 
     global _reader, _extractor, _describer, _activity_log, _drive_uploader, _youtube_chapters
+
+    # Apply any saved tuning / exclusion zones from config/overrides.json
+    load_overrides()
 
     # Ensure output directories exist
     settings.clips_dir.mkdir(parents=True, exist_ok=True)
