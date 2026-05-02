@@ -38,6 +38,8 @@ class YouTubeChapters:
         self._chat_messages_today: int = 0
         self._lock = threading.Lock()
         self._enabled = False
+        self._stop_event = threading.Event()
+        self._poll_thread: threading.Thread | None = None
 
     def start(self) -> None:
         if not _TOKEN_FILE.exists():
@@ -66,25 +68,45 @@ class YouTubeChapters:
             logger.exception("Failed to initialise YouTube client")
             return
 
-        # Find the active live broadcast
-        try:
-            resp = (
-                self._service.liveBroadcasts()
-                .list(part="id,snippet", broadcastStatus="active", broadcastType="all")
-                .execute()
-            )
-            items = resp.get("items", [])
-            if not items:
-                logger.warning("No active YouTube broadcast found. Start streaming first, then restart.")
-                return
+        # The YouTube relay starts after main.py in start.ps1, so the broadcast
+        # is rarely "active" at this point. Poll in the background until it is,
+        # otherwise chapters/live-chat stay disabled for the whole session.
+        self._poll_thread = threading.Thread(
+            target=self._wait_for_broadcast, name="YouTubeChapters", daemon=True
+        )
+        self._poll_thread.start()
 
-            broadcast = items[0]
+    def _wait_for_broadcast(self) -> None:
+        delay = 5
+        max_delay = 60
+        while not self._stop_event.is_set():
+            try:
+                resp = (
+                    self._service.liveBroadcasts()
+                    .list(part="id,snippet", broadcastStatus="active", broadcastType="all")
+                    .execute()
+                )
+                items = resp.get("items", [])
+                if items:
+                    self._attach_broadcast(items[0])
+                    return
+                logger.info(
+                    "No active YouTube broadcast yet — retrying in %ds.", delay
+                )
+            except Exception:
+                logger.exception("Error while polling for active YouTube broadcast")
+
+            if self._stop_event.wait(delay):
+                return
+            delay = min(delay * 2, max_delay)
+
+    def _attach_broadcast(self, broadcast: dict) -> None:
+        try:
             self._broadcast_id = broadcast["id"]
             snippet = broadcast["snippet"]
             self._original_description = snippet.get("description", "")
             self._live_chat_id = snippet.get("liveChatId")
 
-            # Parse stream start time
             actual_start = snippet.get("actualStartTime")
             if actual_start:
                 self._stream_start = datetime.fromisoformat(
@@ -95,17 +117,16 @@ class YouTubeChapters:
 
             self._enabled = True
             logger.info(
-                "YouTube chapter markers enabled. Broadcast: %s, started: %s",
+                "YouTube chapter markers enabled. Broadcast: %s, started: %s, liveChatId: %s",
                 self._broadcast_id,
                 self._stream_start.isoformat(),
+                "yes" if self._live_chat_id else "no",
             )
 
-            # Write initial chapter at 0:00
             self._chapters = [(0, settings.youtube_stream_title)]
             self._push_description()
-
         except Exception:
-            logger.exception("Failed to find active YouTube broadcast")
+            logger.exception("Failed to attach to YouTube broadcast")
 
     def add_chapter(self, timestamp: datetime, description: str, is_key_moment: bool = False) -> None:
         if not self._enabled or self._broadcast_id is None:
@@ -174,3 +195,6 @@ class YouTubeChapters:
 
     def stop(self) -> None:
         self._enabled = False
+        self._stop_event.set()
+        if self._poll_thread:
+            self._poll_thread.join(timeout=5)

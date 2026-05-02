@@ -22,6 +22,7 @@ from pathlib import Path
 from config.settings import settings
 from stream.reader import StreamReader
 from stream.motion import MotionDetector
+from stream.debug_server import start as start_debug_server
 from ai.describer import BirdDescriber
 from clips.extractor import ClipExtractor
 from storage.activity_log import ActivityLog
@@ -247,6 +248,9 @@ def main() -> None:
         on_motion_start=on_motion_start,
         on_motion_end=on_motion_end,
     )
+
+    # Motion-detection debug server (off by default; toggle via the page)
+    start_debug_server(detector)
 
     # Wire stream reader
     _reader = StreamReader(url=settings.camera_rtmp_url)

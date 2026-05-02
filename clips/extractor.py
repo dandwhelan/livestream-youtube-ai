@@ -40,11 +40,17 @@ class ClipExtractor:
 
             ffmpeg_bin = shutil.which("ffmpeg") or r"C:\ffmpeg\bin\ffmpeg.exe"
             
+            # Fragmented MP4: writes moov at the start and self-contained
+            # fragments throughout, so the file stays playable even if the
+            # recording is interrupted. Plain +faststart with -c copy was
+            # producing unreadable files because the final moov-rewrite pass
+            # was being cut short by the graceful-quit timeout.
             cmd = [
                 ffmpeg_bin,
+                "-loglevel", "error",
                 "-i", settings.camera_rtmp_url,
                 "-c", "copy",
-                "-movflags", "+faststart",
+                "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
                 "-t", str(settings.max_clip_duration_seconds),
                 "-y",
                 str(output_path),
