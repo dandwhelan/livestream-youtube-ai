@@ -105,7 +105,11 @@ HTML = """
 </head>
 <body>
 <h1>🐦 Great Tit Nest</h1>
-<p class="subtitle">Auto-refreshes every 30 seconds &mdash; {{ total }} events recorded</p>
+<p class="subtitle">
+  Auto-refreshes every 30 seconds &mdash; {{ total }} events recorded
+  &nbsp;·&nbsp;
+  <a href="http://localhost:5001/" target="_blank" style="color:#7eb8f7;text-decoration:none;">🐛 Motion Debug</a>
+</p>
 
 <div class="main-grid">
   <div class="left-panel">

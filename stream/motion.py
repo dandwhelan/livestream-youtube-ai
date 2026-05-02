@@ -48,6 +48,37 @@ class MotionDetector:
         self._entrance_centroids: list[int] = []  # y-positions during event
         self._current_zone: str | None = None
 
+        # Debug view state — populated each frame when debug is enabled
+        self._debug_enabled: bool = False
+        self._debug_lock = threading.Lock()
+        self._latest_debug_jpeg: bytes | None = None
+        self._latest_stats: dict = {
+            "contours": 0,
+            "max_area_entrance": 0,
+            "max_area_nest": 0,
+            "entrance_motion": False,
+            "nest_motion": False,
+            "ai_cooldown_remaining": 0,
+        }
+
+    def set_debug_enabled(self, enabled: bool) -> None:
+        with self._debug_lock:
+            self._debug_enabled = enabled
+            if not enabled:
+                self._latest_debug_jpeg = None
+
+    def is_debug_enabled(self) -> bool:
+        with self._debug_lock:
+            return self._debug_enabled
+
+    def get_debug_jpeg(self) -> bytes | None:
+        with self._debug_lock:
+            return self._latest_debug_jpeg
+
+    def get_stats(self) -> dict:
+        with self._debug_lock:
+            return dict(self._latest_stats)
+
     def process_frame(
         self,
         frame: np.ndarray,
@@ -80,23 +111,33 @@ class MotionDetector:
         entrance_motion = False
         nest_motion = False
         entrance_centroid_y = None
+        max_area_entrance = 0
+        max_area_nest = 0
+        contour_info: list[tuple] = []  # (x, y, w, h, area, zone, passed) — for debug overlay
 
         for c in contours:
             area = cv2.contourArea(c)
-            _, y, _, h = cv2.boundingRect(c)
+            x, y, w, h = cv2.boundingRect(c)
             center_y = y + h // 2
 
             if center_y < entrance_cutoff:
-                # Entrance zone — low threshold (bird arriving/leaving)
-                if area > settings.motion_min_area:
+                zone_label = "entrance"
+                passed = area > settings.motion_min_area
+                if area > max_area_entrance:
+                    max_area_entrance = int(area)
+                if passed:
                     entrance_motion = True
-                    # Track the largest contour's centroid for direction detection
                     if entrance_centroid_y is None or area > settings.motion_min_area:
                         entrance_centroid_y = center_y
             else:
-                # Nest zone — high threshold (ignore fidgeting)
-                if area > settings.motion_min_area_nest:
+                zone_label = "nest"
+                passed = area > settings.motion_min_area_nest
+                if area > max_area_nest:
+                    max_area_nest = int(area)
+                if passed:
                     nest_motion = True
+
+            contour_info.append((x, y, w, h, int(area), zone_label, passed))
 
         motion_found = entrance_motion or nest_motion
 
@@ -147,7 +188,94 @@ class MotionDetector:
         alpha = 0.001 if motion_found else 0.02
         cv2.accumulateWeighted(gray.astype(np.float32), self._background, alpha=alpha)
 
+        # 3. Debug overlay (only when enabled) — annotate frame and stash JPEG
+        with self._debug_lock:
+            debug_on = self._debug_enabled
+        if debug_on:
+            self._render_debug(
+                frame, entrance_cutoff, contour_info,
+                entrance_motion, nest_motion, motion_found,
+                max_area_entrance, max_area_nest,
+            )
+
         return motion_found
+
+    def _render_debug(
+        self,
+        frame: np.ndarray,
+        entrance_cutoff: int,
+        contour_info: list[tuple],
+        entrance_motion: bool,
+        nest_motion: bool,
+        motion_found: bool,
+        max_area_entrance: int,
+        max_area_nest: int,
+    ) -> None:
+        annotated = frame.copy()
+        h, w = annotated.shape[:2]
+
+        # Zone divider
+        cv2.line(annotated, (0, entrance_cutoff), (w, entrance_cutoff), (0, 200, 255), 2)
+        cv2.putText(annotated, "ENTRANCE", (8, max(14, entrance_cutoff - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1, cv2.LINE_AA)
+        cv2.putText(annotated, "NEST", (8, entrance_cutoff + 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1, cv2.LINE_AA)
+
+        # Contour boxes — green if passed threshold, dim red if rejected
+        for cx, cy, cw, ch, area, zone_label, passed in contour_info:
+            color = (60, 220, 60) if passed else (60, 60, 200)
+            cv2.rectangle(annotated, (cx, cy), (cx + cw, cy + ch), color, 1)
+            label = f"{zone_label[0].upper()} {area}"
+            cv2.putText(annotated, label, (cx, max(10, cy - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+
+        # HUD: current thresholds
+        hud = [
+            f"thresh={settings.motion_threshold}",
+            f"min_entrance={settings.motion_min_area}",
+            f"min_nest={settings.motion_min_area_nest}",
+            f"zone_split={settings.entrance_zone_bottom:.2f}",
+            f"max_area E/N={max_area_entrance}/{max_area_nest}",
+        ]
+        for i, line in enumerate(hud):
+            cv2.putText(annotated, line, (8, h - 10 - (len(hud) - 1 - i) * 16),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+        # Motion badge
+        if motion_found:
+            badge_text = "MOTION: " + ("entrance" if entrance_motion else "") \
+                         + ("+nest" if entrance_motion and nest_motion else "nest" if nest_motion else "")
+            cv2.rectangle(annotated, (w - 240, 8), (w - 8, 36), (0, 0, 200), -1)
+            cv2.putText(annotated, badge_text, (w - 232, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+
+        # AI cooldown indicator
+        cooldown_remaining = 0
+        if self._last_ai_call_time is not None:
+            hour = datetime.now().hour
+            is_night = hour >= 22 or hour <= 5
+            required = 3600 if is_night else 300
+            elapsed = (datetime.now() - self._last_ai_call_time).total_seconds()
+            cooldown_remaining = max(0, int(required - elapsed))
+        if cooldown_remaining > 0:
+            cv2.putText(annotated, f"AI cooldown: {cooldown_remaining}s",
+                        (w - 240, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                        (180, 180, 180), 1, cv2.LINE_AA)
+
+        ok, jpeg = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not ok:
+            return
+
+        with self._debug_lock:
+            self._latest_debug_jpeg = jpeg.tobytes()
+            self._latest_stats = {
+                "contours": len(contour_info),
+                "max_area_entrance": max_area_entrance,
+                "max_area_nest": max_area_nest,
+                "entrance_motion": entrance_motion,
+                "nest_motion": nest_motion,
+                "ai_cooldown_remaining": cooldown_remaining,
+            }
 
     def _determine_direction(self) -> str:
         """Determine bird direction from entrance centroid tracking."""
