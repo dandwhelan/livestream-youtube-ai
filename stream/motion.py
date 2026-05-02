@@ -106,13 +106,15 @@ class MotionDetector:
 
         if motion_found:
             self._last_motion_time = timestamp
-
-            # HARD TIMEOUT: if the event has been going longer than max clip duration, force end it
+            
+            # 1. Hard timeout: if event exceeds max_clip_duration_seconds, force end it.
+            # This ensures we don't get infinite "pending" clips if the bird is fidgety.
             if self._motion_active and self._last_ai_call_time:
-                elapsed_event_time = (timestamp - self._last_ai_call_time).total_seconds()
-                if elapsed_event_time >= settings.max_clip_duration_seconds:
-                    logger.warning("Event reached max duration (%ss) — forcing end", settings.max_clip_duration_seconds)
+                elapsed = (timestamp - self._last_ai_call_time).total_seconds()
+                if elapsed >= settings.max_clip_duration_seconds:
+                    logger.warning("Event reached max duration (%ss) - forcing end", settings.max_clip_duration_seconds)
                     self._fire_motion_end(timestamp)
+                    self._motion_active = False # Will restart a new clip immediately if still moving
 
             self._reschedule_motion_end(timestamp)
 
@@ -139,10 +141,10 @@ class MotionDetector:
                     self.on_motion_start(frame, timestamp, buffer_snapshot, motion_info)
                 except Exception:
                     logger.exception("on_motion_start callback error")
-
-        # Always update background model to prevent lighting-change deadlocks.
-        # Fast update during quiet (alpha=0.05), extremely slow during motion (alpha=0.001)
-        alpha = 0.001 if motion_found else 0.05
+        
+        # 2. Always update background model to prevent lighting change deadlocks.
+        # Use a very slow alpha during motion to avoid 'erasing' the bird.
+        alpha = 0.001 if motion_found else 0.02
         cv2.accumulateWeighted(gray.astype(np.float32), self._background, alpha=alpha)
 
         return motion_found

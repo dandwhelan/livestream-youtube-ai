@@ -87,6 +87,7 @@ Key settings:
 ## Outputs
 
 - `clips_output/` — MP4 clips
+- `snapshots/` — JPEG snapshots of nest activity
 - `logs/activity_log.json` — append-only JSON array of all events, `is_key_moment`, and Drive URLs
 - `logs/birdbox.log` — rotating app log
 - Google Drive: `BirdBox/clips/` and `BirdBox/Key Moments/`

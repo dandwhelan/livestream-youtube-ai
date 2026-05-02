@@ -2,13 +2,6 @@
 
 An automated pipeline that monitors a Birdify RTMP stream, uses **Google Gemini Vision AI** to detect exciting events ("Key Moments" like feeding and hatching), automatically records clips to Google Drive, and posts to a YouTube Live Chat.
 
-## Key Features
-* **Zone-Based Motion Detection**: The entrance (top 12%) is highly sensitive to catch arrivals/departures, while the nest zone ignores mum's subtle movements to prevent false alarms.
-* **Smart AI Intuder Detection**: Gemini Vision analyzes motion events to determine if a predator or different bird species entered the box.
-* **Direction Tracking**: Automatically logs whether the bird is arriving (moving down) or leaving (moving up).
-* **Automated Archival**: Extracts perfectly-timed clips using FFmpeg stream copy and uploads Key Moments to Google Drive.
-* **Activity Dashboard**: A real-time web UI to monitor the camera, view hourly activity heatmaps, and see snapshot thumbnails of recent events.
-
 ## Prerequisites
 Before you begin, you must have the following installed:
 1. **Python 3.10+** (Make sure to check "Add Python to PATH" during installation).
@@ -35,26 +28,53 @@ pip install -r requirements.txt
 2. **Google Drive:** Run `python auth_drive.py` once to authenticate.
 3. **YouTube:** Run `python auth_youtube.py` once to authenticate your channel.
 
-## How to Run
+## Quick Start (Automated)
 
-**The Easy Way (Recommended):**
-Just run the included launch script to start all services (MediaMTX, AI Pipeline, Dashboard, and YouTube Relay) in separate windows automatically:
+You can launch all services (MediaMTX, AI Pipeline, Dashboard, and YouTube Relay) in one go using the provided scripts:
+
 ```powershell
+# To start everything:
 .\start.ps1
-```
-To shut everything down cleanly, run:
-```powershell
+
+# To stop everything:
 .\stop.ps1
 ```
 
-**Manual Start:**
-If you prefer running them manually, open four separate PowerShell windows (remember to activate the virtual environment `.\venv\Scripts\activate` in the python ones):
-1. `.\mediamtx.exe mediamtx.yml`
-2. `python main.py`
-3. `python dashboard.py` (then open http://localhost:5000)
-4. `.\relay_youtube.ps1`
+## How to Run (Manual)
 
-*(Configure your Birdify app to stream to `rtmp://<your-local-ip>:1935/camera`)*
+If you prefer separate terminals, you will need four PowerShell windows (make sure to run `.\venv\Scripts\activate` in the ones running python scripts!).
+
+**Terminal 1: MediaMTX (RTMP Server)**
+```powershell
+.\mediamtx.exe mediamtx.yml
+```
+*(Configure your camera to stream to `rtmp://<your-local-ip>:1935/camera`)*
+
+**Terminal 2: AI Pipeline**
+```powershell
+.\venv\Scripts\activate
+python main.py
+```
+
+**Terminal 3: Dashboard**
+```powershell
+.\venv\Scripts\activate
+python dashboard.py
+```
+*Open http://localhost:5000 to monitor activity.*
+
+**Terminal 4: YouTube Relay**
+```powershell
+.\relay_youtube.ps1
+```
+
+## Key Features
+
+- **Zone-Based Detection:** High sensitivity for the entrance (top 12%) and low sensitivity for the nest (bottom 88%) to ignore fidgeting while catching every arrival.
+- **Intruder Alert:** Uses Gemini Vision AI to identify if a different species (like a sparrow or predator) has entered the box.
+- **Direction Tracking:** Automatically detects if a bird is "Entering" or "Leaving" based on its movement path.
+- **Activity Heatmap:** Hourly breakdown of nest activity visible on the local dashboard.
+- **Automated YouTube Highlights:** Posts real-time chapter markers and chat comments for "Key Moments" (feeding, hatching, etc.).
 
 ## Testing Without Spamming Subscribers
 If you want to test the bot without notifying your YouTube followers:
