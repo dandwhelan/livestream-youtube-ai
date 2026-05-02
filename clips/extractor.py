@@ -104,6 +104,15 @@ class ClipExtractor:
             pass
         if self._process.returncode not in (0, None):
             logger.debug("FFmpeg exit %d: %s", self._process.returncode, stderr_output[-500:])
+
+        # Explicitly close pipe handles so GC doesn't trip OSError 22 on Windows
+        for stream in (self._process.stdin, self._process.stdout, self._process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
+
         self._process = None
         logger.info("Clip recording stopped: %s", self._current_clip_path)
 
