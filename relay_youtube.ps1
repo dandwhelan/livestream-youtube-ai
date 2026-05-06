@@ -43,7 +43,7 @@ while ($true) {
     Write-Host "$ts Connecting to $source ..."
     & $ffmpeg `
         -i $source `
-        -c:v copy -c:a aac -b:a 128k `
+        -c:v copy -c:a aac -ar 44100 -b:a 128k `
         -f flv $dest
     $exitCode = $LASTEXITCODE
     $ts = Get-Date -Format 'HH:mm:ss'
