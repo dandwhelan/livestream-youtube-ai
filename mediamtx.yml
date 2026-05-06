@@ -800,15 +800,10 @@ paths:
   # Birdify camera pushes RTMP here: rtmp://<your-pc-ip>:1935/camera
   camera:
     source: publisher
-    # Loop offline clip when camera is disconnected — keeps analysis stream alive
-    alwaysAvailable: true
-    alwaysAvailableFile: offline.mp4
 
   # Python reads from this path — mediamtx internally re-publishes the camera stream here.
   analysis:
     source: rtmp://localhost:1935/camera
     sourceOnDemand: no
-    alwaysAvailable: true
-    alwaysAvailableFile: offline.mp4
 
   all_others:
