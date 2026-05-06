@@ -45,6 +45,10 @@ class Settings:
     )
     gemini_model: str = "gemini-2.5-flash"  # Using 2.5-flash as it is fast and cheap
 
+    # Nesting stage drives the AI prompt context.
+    # One of: "nest_building", "egg_laying", "incubation", "hatching", "nestling", "fledging", "empty"
+    nesting_stage: str = "nestling"
+
 
     # Google Drive
     drive_credentials_path: Path = field(
