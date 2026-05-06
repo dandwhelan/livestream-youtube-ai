@@ -28,6 +28,8 @@ from clips.extractor import ClipExtractor
 from storage.activity_log import ActivityLog
 from storage.drive_uploader import DriveUploader
 from storage.youtube_chapters import YouTubeChapters
+from monitoring.daily_summary import DailySummary
+from monitoring.silent_alarm import SilentAlarm
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +67,8 @@ _describer: BirdDescriber | None = None
 _activity_log: ActivityLog | None = None
 _drive_uploader: DriveUploader | None = None
 _youtube_chapters: YouTubeChapters | None = None
+_daily_summary: DailySummary | None = None
+_silent_alarm: SilentAlarm | None = None
 
 # Tracks the current event so on_motion_end can update the log entry
 _current_entry_id: str | None = None
@@ -94,15 +98,12 @@ def on_motion_start(frame, timestamp: datetime, buffer_snapshot: list, motion_in
 
     logger.info("=== Motion event started at %s (zone: %s) ===", timestamp.isoformat(), zone)
 
-    # 1. Get AI description (blocking ~10s) — AI also detects intruders
-    description, is_key_moment, is_intruder = _describer.describe_frame(frame)
+    # 1. Get AI description (blocking ~10s)
+    description, is_key_moment = _describer.describe_frame(frame)
     if description:
         logger.info("Activity: %s", description)
     else:
         logger.info("AI description unavailable")
-
-    if is_intruder:
-        logger.warning("🚨 INTRUDER DETECTED — different bird or animal in the box!")
 
     # 2. Save snapshot (useful when mum moves — eggs may be visible)
     snapshot_path = None
@@ -136,7 +137,6 @@ def on_motion_start(frame, timestamp: datetime, buffer_snapshot: list, motion_in
         clip_path=clip_path,
         is_key_moment=is_key_moment,
         motion_zone=zone,
-        is_intruder=is_intruder,
         snapshot_path=snapshot_path,
     )
     _current_is_key_moment = is_key_moment
@@ -161,6 +161,20 @@ def on_motion_end(last_timestamp: datetime, motion_info: dict = None) -> None:
     # 2. Update log entry with end time and direction
     if _current_entry_id:
         _activity_log.update_event_end(_current_entry_id, last_timestamp, direction)
+
+    # 2b. Chick-count estimator: when mum has just left, the chicks should be
+    # visible. Re-use Gemini on the latest frame and store the count.
+    if (
+        settings.chick_count_enabled
+        and direction == "leaving"
+        and _current_entry_id
+        and _reader is not None
+    ):
+        latest_frame, _ = _reader.get_latest_frame()
+        if latest_frame is not None:
+            count = _describer.count_chicks(latest_frame)
+            if count is not None:
+                _activity_log.update_chick_count(_current_entry_id, count)
 
     # 3. Queue Drive upload
     if finished_path and finished_path.exists() and _current_entry_id:
@@ -214,6 +228,10 @@ def _shutdown(sig, frame) -> None:
         _drive_uploader.stop()
     if _youtube_chapters:
         _youtube_chapters.stop()
+    if _daily_summary:
+        _daily_summary.stop()
+    if _silent_alarm:
+        _silent_alarm.stop()
     logger.info("Goodbye.")
     sys.exit(0)
 
@@ -227,6 +245,7 @@ def main() -> None:
     logger.info("Bird Box Stream Processor starting...")
 
     global _reader, _extractor, _describer, _activity_log, _drive_uploader, _youtube_chapters
+    global _daily_summary, _silent_alarm
 
     # Apply any saved tuning / exclusion zones from config/overrides.json
     load_overrides()
@@ -243,6 +262,11 @@ def main() -> None:
     _drive_uploader.start()
     _youtube_chapters = YouTubeChapters()
     _youtube_chapters.start()
+
+    _daily_summary = DailySummary(_describer, _activity_log, _youtube_chapters)
+    _daily_summary.start()
+    _silent_alarm = SilentAlarm(_activity_log, _youtube_chapters)
+    _silent_alarm.start()
 
     validate_environment()
 

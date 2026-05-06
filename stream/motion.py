@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Callable
 
-from config.settings import settings
+from config.settings import settings, cooldown_seconds, effective_motion_thresholds
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +96,12 @@ class MotionDetector:
             self._background = gray.astype(np.float32)
             return False
 
+        # Stage-aware thresholds: fledging stage drops these so wing-flaps trigger.
+        eff_threshold, eff_min_area, eff_min_area_nest = effective_motion_thresholds()
+
         bg_uint8 = self._background.astype(np.uint8)
         diff = cv2.absdiff(bg_uint8, gray)
-        _, thresh = cv2.threshold(diff, settings.motion_threshold, 255, cv2.THRESH_BINARY)
+        _, thresh = cv2.threshold(diff, eff_threshold, 255, cv2.THRESH_BINARY)
         dilated = cv2.dilate(thresh, None, iterations=2)
 
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -136,16 +139,16 @@ class MotionDetector:
 
             if center_y < entrance_cutoff:
                 zone_label = "entrance"
-                passed = area > settings.motion_min_area
+                passed = area > eff_min_area
                 if area > max_area_entrance:
                     max_area_entrance = int(area)
                 if passed:
                     entrance_motion = True
-                    if entrance_centroid_y is None or area > settings.motion_min_area:
+                    if entrance_centroid_y is None or area > eff_min_area:
                         entrance_centroid_y = center_y
             else:
                 zone_label = "nest"
-                passed = area > settings.motion_min_area_nest
+                passed = area > eff_min_area_nest
                 if area > max_area_nest:
                     max_area_nest = int(area)
                 if passed:
@@ -265,11 +268,14 @@ class MotionDetector:
             cv2.putText(annotated, label, (cx, max(10, cy - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
 
-        # HUD: current thresholds
+        # HUD: current (effective) thresholds + stage
+        from config.settings import current_stage
+        eff_threshold, eff_min_area, eff_min_area_nest = effective_motion_thresholds()
         hud = [
-            f"thresh={settings.motion_threshold}",
-            f"min_entrance={settings.motion_min_area}",
-            f"min_nest={settings.motion_min_area_nest}",
+            f"stage={current_stage()}",
+            f"thresh={eff_threshold}",
+            f"min_entrance={eff_min_area}",
+            f"min_nest={eff_min_area_nest}",
             f"zone_split={settings.entrance_zone_bottom:.2f}",
             f"max_area E/N={max_area_entrance}/{max_area_nest}",
         ]
@@ -288,9 +294,7 @@ class MotionDetector:
         # AI cooldown indicator
         cooldown_remaining = 0
         if self._last_ai_call_time is not None:
-            hour = datetime.now().hour
-            is_night = hour >= 22 or hour <= 5
-            required = 3600 if is_night else 300
+            required = cooldown_seconds()
             elapsed = (datetime.now() - self._last_ai_call_time).total_seconds()
             cooldown_remaining = max(0, int(required - elapsed))
         if cooldown_remaining > 0:
@@ -333,15 +337,8 @@ class MotionDetector:
             return True
 
         elapsed = (datetime.now() - self._last_ai_call_time).total_seconds()
-
-        # Dynamic cooldown based on time of day (Night = 10 PM to 5 AM)
-        hour = datetime.now().hour
-        is_night = hour >= 22 or hour <= 5
-
-        # 1 hour cooldown at night, 5 minute cooldown during day to save Gemini/YouTube quota
-        required_cooldown = 3600 if is_night else 300
-
-        return elapsed >= required_cooldown
+        # Stage-aware cooldown (e.g. nestling: ~2 min day; incubation: ~5 min day).
+        return elapsed >= cooldown_seconds()
 
     def _reschedule_motion_end(self, timestamp: datetime) -> None:
         with self._lock:

@@ -5,32 +5,92 @@ from google.genai import types
 import cv2
 import numpy as np
 
-from config.settings import settings
+from config.settings import settings, current_stage
 
 logger = logging.getLogger(__name__)
 
-PROMPT = (
-    "You are a wildlife expert watching a live Great Tit nest box camera. "
-    "A motion event was just detected. "
-    "Analyze the image and describe exactly what is happening in 1 short sentence. "
-    "Focus heavily on identifying KEY MOMENTS: is a bird entering/leaving, "
-    "bringing food (grubs, insects), or are eggs hatching? "
-    "If it's just the bird sitting still and brooding, state that. "
-    "\n\n"
-    "IMPORTANT — also check if there is a DIFFERENT bird or animal in the box. "
-    "A Great Tit has a yellow-green body, black head with white cheeks, and a black stripe down the belly. "
-    "If you see a different species (e.g. a Blue Tit, House Sparrow, or any other animal), "
-    "start your response with 'INTRUDER: ' followed by what you see. "
-    "\n\n"
-    "If it's a key moment (feeding, hatching, bird returning with food), "
-    "start your response with 'KEY_MOMENT: ' followed by a fun, engaging YouTube Live Chat comment. "
-    "Be extremely concise."
+
+STAGE_CONTEXT = {
+    "nestling": (
+        "STAGE CONTEXT — NESTLING PHASE: The eggs have hatched. "
+        "Tiny pink/grey naked chicks with closed eyes may be visible under or beside the mother. "
+        "Both parents now feed the chicks: when you see TWO Great Tits in the box together, "
+        "that is the DAD arriving to feed — flag this as a KEY MOMENT. "
+        "Expect frequent food deliveries (caterpillars, grubs, insects); every successful feeding is a key moment. "
+        "Other key moments: a chick visibly being fed, eggshells being removed, "
+        "fecal sacs being carried out (parental hygiene), or a freshly hatched chick."
+    ),
+    "incubation": (
+        "STAGE CONTEXT — INCUBATION: The mother is sitting on eggs almost continuously. "
+        "Key moments are her leaving/returning, the dad bringing food to her, or eggs hatching. "
+        "Most footage will be her sitting still — that is routine, not a key moment."
+    ),
+    "egg_laying": (
+        "STAGE CONTEXT — EGG LAYING: The female lays one egg per day, usually early morning. "
+        "Key moments are a newly visible egg, the female arriving to lay, or arranging the nest cup."
+    ),
+    "nest_building": (
+        "STAGE CONTEXT — NEST BUILDING: Birds bring moss, grass, and feathers. "
+        "Key moments are nest material being delivered or shaped into the cup."
+    ),
+    "fledging": (
+        "STAGE CONTEXT — FLEDGING: Chicks are feathered and nearly ready to leave. "
+        "Key moments are chicks at the entrance, wing-flapping/exercising, or actually fledging out of the box."
+    ),
+    "empty": (
+        "STAGE CONTEXT — EMPTY/UNKNOWN: Any bird visit is a key moment."
+    ),
+}
+
+
+def build_prompt(stage: str) -> str:
+    stage_text = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["empty"])
+    return (
+        "You are a wildlife expert watching a live Great Tit nest box camera. "
+        "A motion event was just detected. "
+        "Analyze the image and describe exactly what is happening in 1 short sentence.\n\n"
+        f"{stage_text}\n\n"
+        "Output rules — start your response with EXACTLY ONE of these prefixes:\n"
+        "  'KEY_MOMENT: '  → for feeding, hatching, food delivery, dad visiting, eggshell/fecal-sac removal, "
+        "or anything notable for the live chat. Follow with a fun, engaging YouTube Live Chat comment.\n"
+        "  (no prefix)    → routine activity (mum brooding, sitting still, minor adjustments).\n"
+        "Be extremely concise."
+    )
+
+
+_CHICK_COUNT_PROMPT = (
+    "You are looking at a Great Tit nest box from above. The mother has just left "
+    "and the chicks should now be visible in the nest cup. "
+    "Count the number of chicks you can clearly see. "
+    "Respond with ONLY a single integer (e.g. '5'). "
+    "If you cannot see any chicks or cannot tell, respond with '0'."
 )
+
+
+def _summary_prompt(events: list[dict]) -> str:
+    lines = []
+    for e in events:
+        ts = (e.get("event_start") or "")[11:16]  # HH:MM
+        desc = (e.get("ai_description") or "").strip()
+        flag = " [KEY]" if e.get("is_key_moment") else ""
+        if desc:
+            lines.append(f"{ts}{flag} {desc}")
+    log_text = "\n".join(lines) or "(no events)"
+    return (
+        "You are writing the daily wrap-up for a Great Tit nest box live stream. "
+        f"Today's stage is '{current_stage()}'. "
+        "Below is the chronological event log for the day. Write a short, warm, "
+        "engaging recap (≤400 characters, suitable for YouTube live chat) covering: "
+        "total feeding visits, the longest quiet gap, and one notable highlight. "
+        "Do not invent details that aren't in the log.\n\n"
+        f"EVENTS:\n{log_text}"
+    )
+
 
 class BirdDescriber:
     """
     Calls Google Gemini API to describe a single frame.
-    Returns a tuple: (description_string, is_key_moment, is_intruder)
+    Returns (description_string, is_key_moment).
     """
 
     def __init__(self):
@@ -40,53 +100,77 @@ class BirdDescriber:
         else:
             self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.gemini_model
+        logger.info("BirdDescriber initialised; current stage: %s", current_stage())
 
-    def describe_frame(self, frame: np.ndarray) -> tuple[str | None, bool, bool]:
+    def describe_frame(self, frame: np.ndarray) -> tuple[str | None, bool]:
         if not self.client:
-            return None, False, False
+            return None, False
 
         try:
-            # Convert OpenCV frame (BGR) to PIL Image (RGB)
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb)
 
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=[
-                    pil_img,
-                    PROMPT,
-                ],
-                config=types.GenerateContentConfig(
-                    temperature=0.4,
-                )
+                contents=[pil_img, build_prompt(current_stage())],
+                config=types.GenerateContentConfig(temperature=0.4),
             )
-            
+
             description = response.text.strip()
             is_key_moment = False
-            is_intruder = False
-            
-            if description.startswith("INTRUDER:"):
-                is_intruder = True
-                is_key_moment = True  # intruders are always key moments
-                description = description.replace("INTRUDER:", "").strip()
-            elif description.startswith("KEY_MOMENT:"):
+
+            if description.startswith("KEY_MOMENT:"):
                 is_key_moment = True
                 description = description.replace("KEY_MOMENT:", "").strip()
-                
+
             if description:
-                if is_intruder:
-                    prefix = "🚨 INTRUDER"
-                elif is_key_moment:
-                    prefix = "🌟 KEY MOMENT"
-                else:
-                    prefix = "Routine"
-                logger.info(f"AI Description [{prefix}]: {description}")
-                
-            return description or None, is_key_moment, is_intruder
-            
+                prefix = "KEY MOMENT" if is_key_moment else "Routine"
+                logger.info("AI Description [%s]: %s", prefix, description)
+
+            return description or None, is_key_moment
+
         except Exception as e:
-            logger.exception(f"Gemini AI description failed: {e}")
-            return None, False, False
+            logger.exception("Gemini AI description failed: %s", e)
+            return None, False
+
+    def count_chicks(self, frame: np.ndarray) -> int | None:
+        """Returns an integer chick count if Gemini can read it, else None."""
+        if not self.client:
+            return None
+        try:
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb)
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[pil_img, _CHICK_COUNT_PROMPT],
+                config=types.GenerateContentConfig(temperature=0.0),
+            )
+            text = (response.text or "").strip()
+            digits = "".join(ch for ch in text if ch.isdigit())
+            if not digits:
+                return None
+            count = int(digits)
+            logger.info("Chick count estimate: %d", count)
+            return count
+        except Exception as e:
+            logger.exception("Chick count failed: %s", e)
+            return None
+
+    def generate_daily_summary(self, events: list[dict]) -> str | None:
+        """Generates a YouTube-live-chat-friendly daily recap from the activity log."""
+        if not self.client:
+            return None
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[_summary_prompt(events)],
+                config=types.GenerateContentConfig(temperature=0.6),
+            )
+            text = (response.text or "").strip()
+            return text or None
+        except Exception as e:
+            logger.exception("Daily summary generation failed: %s", e)
+            return None
 
     def health_check(self) -> bool:
         """Returns True if the client is initialized."""
