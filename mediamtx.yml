@@ -802,13 +802,13 @@ paths:
     source: publisher
     # Loop offline clip when camera is disconnected — keeps analysis stream alive
     alwaysAvailable: true
-    alwaysAvailableFile: C:/Users/danw/Documents/Projects/birdify/offline.mp4
+    alwaysAvailableFile: offline.mp4
 
   # Python reads from this path — mediamtx internally re-publishes the camera stream here.
   analysis:
     source: rtmp://localhost:1935/camera
     sourceOnDemand: no
     alwaysAvailable: true
-    alwaysAvailableFile: C:/Users/danw/Documents/Projects/birdify/offline.mp4
+    alwaysAvailableFile: offline.mp4
 
   all_others:
