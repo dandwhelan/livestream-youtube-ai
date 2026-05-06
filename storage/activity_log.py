@@ -51,7 +51,6 @@ class ActivityLog:
         clip_path: Path | None,
         is_key_moment: bool = False,
         motion_zone: str = "unknown",
-        is_intruder: bool = False,
         snapshot_path: Path | None = None,
     ) -> str:
         """
@@ -67,7 +66,7 @@ class ActivityLog:
             "is_key_moment": is_key_moment,
             "motion_zone": motion_zone,
             "motion_direction": None,
-            "is_intruder": is_intruder,
+            "chick_count": None,
             "clip_filename": clip_path.name if clip_path else None,
             "clip_local_path": str(clip_path) if clip_path else None,
             "snapshot_filename": snapshot_path.name if snapshot_path else None,
@@ -91,6 +90,34 @@ class ActivityLog:
                     e["motion_direction"] = direction
                     break
             self._write(entries)
+
+    def update_chick_count(self, entry_id: str, count: int) -> None:
+        with self._lock:
+            entries = self._read()
+            for e in entries:
+                if e["id"] == entry_id:
+                    e["chick_count"] = count
+                    break
+            self._write(entries)
+
+    def events_since(self, since: datetime) -> list[dict]:
+        """Returns entries whose event_start is >= since (any tz handled best-effort)."""
+        cutoff = since.isoformat()
+        with self._lock:
+            entries = self._read()
+        return [e for e in entries if (e.get("event_start") or "") >= cutoff]
+
+    def last_key_moment_time(self) -> datetime | None:
+        """Returns the timestamp of the most recent key-moment event, or None."""
+        with self._lock:
+            entries = self._read()
+        for e in reversed(entries):
+            if e.get("is_key_moment") and e.get("event_start"):
+                try:
+                    return datetime.fromisoformat(e["event_start"])
+                except ValueError:
+                    continue
+        return None
 
     def update_drive_url(self, entry_id: str, drive_url: str, status: str) -> None:
         with self._lock:

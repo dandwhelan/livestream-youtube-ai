@@ -82,7 +82,6 @@ HTML = """
   .event { background: #1c1f26; border-radius: 10px; padding: 14px 18px; border-left: 3px solid #3a6; }
   .event.no-desc { border-left-color: #555; }
   .event.key-moment { border-left-color: #fca311; background: #2b2512; }
-  .event.intruder { border-left-color: #e53e3e; background: #2a1215; }
   .event-time { font-size: 0.8rem; color: #888; margin-bottom: 6px; }
   .event-desc { font-size: 0.95rem; line-height: 1.5; }
   .event-meta { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -94,7 +93,6 @@ HTML = """
   .badge.nest     { background: #2a2a1a; color: #b8a86e; }
   .badge.entering { background: #1a3a2a; color: #5c9; }
   .badge.leaving  { background: #2a1a3a; color: #b88be8; }
-  .badge.intruder-badge { background: #3a1a1a; color: #e55; font-weight: 600; }
   .drive-link { font-size: 0.75rem; color: #7eb8f7; text-decoration: none; }
   .drive-link:hover { text-decoration: underline; }
   .snapshot-thumb { width: 100%; max-width: 200px; border-radius: 6px; margin-top: 8px; cursor: pointer; border: 1px solid #333; }
@@ -164,9 +162,9 @@ HTML = """
     {% if events %}
     <div class="events">
       {% for e in events %}
-      <div class="event {% if not e.ai_description %}no-desc{% endif %} {% if e.is_intruder %}intruder{% elif e.is_key_moment %}key-moment{% endif %}">
+      <div class="event {% if not e.ai_description %}no-desc{% endif %} {% if e.is_key_moment %}key-moment{% endif %}">
         <div class="event-time">
-          {% if e.is_intruder %}🚨 INTRUDER &mdash; {% elif e.is_key_moment %}⭐ KEY MOMENT &mdash; {% endif %}
+          {% if e.is_key_moment %}⭐ KEY MOMENT &mdash; {% endif %}
           {{ e.event_start_fmt }}{% if e.duration %} &mdash; {{ e.duration }}{% endif %}
         </div>
         <div class="event-desc">{{ e.ai_description or "No AI description (Gemini Vision unavailable)" }}</div>

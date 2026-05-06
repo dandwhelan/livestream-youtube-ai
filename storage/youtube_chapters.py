@@ -151,6 +151,17 @@ class YouTubeChapters:
             except Exception:
                 logger.exception("Failed to post to YouTube live chat")
 
+    def post_message(self, message: str) -> bool:
+        """Public: post an arbitrary message to YouTube live chat. Returns True if sent."""
+        if not self._enabled or not self._live_chat_id or not message:
+            return False
+        try:
+            self._post_live_chat(message)
+            return True
+        except Exception:
+            logger.exception("Failed to post live-chat message")
+            return False
+
     def _post_live_chat(self, message: str) -> None:
         if self._chat_messages_today >= 200:
             logger.warning("YouTube Chat quota limit reached for today. Skipping message.")
