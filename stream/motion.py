@@ -195,10 +195,12 @@ class MotionDetector:
                     timestamp.isoformat(),
                     zone,
                 )
-                try:
-                    self.on_motion_start(frame, timestamp, buffer_snapshot, motion_info)
-                except Exception:
-                    logger.exception("on_motion_start callback error")
+                def _run(f=frame, ts=timestamp, buf=buffer_snapshot, mi=motion_info):
+                    try:
+                        self.on_motion_start(f, ts, buf, mi)
+                    except Exception:
+                        logger.exception("on_motion_start callback error")
+                threading.Thread(target=_run, daemon=True, name="MotionEvent").start()
         
         # 2. Always update background model to prevent lighting change deadlocks.
         # Use a very slow alpha during motion to avoid 'erasing' the bird.
