@@ -12,9 +12,11 @@ Then open http://localhost:5000
 
 import json
 from pathlib import Path
-from flask import Flask, render_template_string, send_from_directory
+from flask import Flask, render_template_string, request, redirect, send_from_directory, url_for
 
-from config.settings import settings
+from config.settings import settings, load_overrides, save_overrides
+
+load_overrides()
 
 app = Flask(__name__)
 
@@ -99,6 +101,20 @@ HTML = """
   .snapshot-thumb:hover { border-color: #7eb8f7; }
   .empty { color: #555; text-align: center; padding: 60px; }
   .refresh { color: #555; font-size: 0.75rem; margin-top: 24px; }
+
+  .settings-panel { background: #1c1f26; border-radius: 10px; padding: 12px 16px; margin-bottom: 24px; }
+  .settings-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.85rem; color: #aaa; }
+  .settings-form label { color: #aaa; }
+  .settings-form input[type=number] {
+    width: 64px; background: #0f1117; color: #e8e8e8; border: 1px solid #333;
+    border-radius: 6px; padding: 4px 8px; font: inherit;
+  }
+  .settings-form button {
+    background: #2a4a6a; color: #e8e8e8; border: none; border-radius: 6px;
+    padding: 5px 12px; cursor: pointer; font: inherit;
+  }
+  .settings-form button:hover { background: #3a5a7a; }
+  .settings-form .hint { color: #666; font-size: 0.75rem; }
 </style>
 </head>
 <body>
@@ -115,6 +131,17 @@ HTML = """
       <div class="live-label"><span class="live-dot"></span> LIVE</div>
       <video id="video" controls autoplay muted playsinline></video>
       <div class="offline-msg" id="offline-msg" style="display:none">Stream offline — waiting for camera</div>
+    </div>
+
+    <div class="settings-panel">
+      <form method="post" action="/settings" class="settings-form">
+        <label for="stream_restart_hours">Auto-restart YouTube relay every</label>
+        <input type="number" id="stream_restart_hours" name="stream_restart_hours"
+               min="0" max="24" step="1" value="{{ stream_restart_hours }}">
+        <span>hours</span>
+        <button type="submit">Save</button>
+        <span class="hint">0 = disabled. Takes effect after the next FFmpeg restart.</span>
+      </form>
     </div>
 
     <div class="stats">
@@ -317,6 +344,18 @@ def serve_snapshot(filename):
     return send_from_directory(settings.snapshots_dir, filename)
 
 
+@app.route("/settings", methods=["POST"])
+def update_settings():
+    raw = request.form.get("stream_restart_hours", "0").strip()
+    try:
+        hours = int(raw)
+    except ValueError:
+        hours = 0
+    settings.stream_restart_hours = max(0, min(24, hours))
+    save_overrides()
+    return redirect(url_for("index"))
+
+
 @app.route("/")
 def index():
     log_path = settings.activity_log_path
@@ -356,6 +395,7 @@ def index():
         today=today,
         key_moments=key_moments,
         heatmap=heatmap,
+        stream_restart_hours=settings.stream_restart_hours,
     )
 
 
