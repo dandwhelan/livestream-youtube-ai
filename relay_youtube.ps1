@@ -36,64 +36,31 @@ $ffmpeg = "C:/ffmpeg/bin/ffmpeg.exe"
 $source = "rtmp://localhost:1935/analysis"
 $dest   = "rtmp://a.rtmp.youtube.com/live2/$StreamKey"
 $overridesPath = Join-Path $PSScriptRoot "config/overrides.json"
-$overlayFile   = Join-Path $PSScriptRoot "logs/overlay_stats.txt"
-$fontFile      = "C:/Windows/Fonts/arialbd.ttf"
 
-function Get-Override {
-    param([string]$Name, $Default)
-    if (-not (Test-Path $overridesPath)) { return $Default }
+function Get-RestartHours {
+    if (-not (Test-Path $overridesPath)) { return 0 }
     try {
         $data = Get-Content $overridesPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        if ($data.PSObject.Properties.Name -contains $Name) {
-            return $data.$Name
+        if ($data.PSObject.Properties.Name -contains 'stream_restart_hours') {
+            $h = [int]$data.stream_restart_hours
+            if ($h -lt 0) { return 0 }
+            return $h
         }
     } catch {}
-    return $Default
-}
-
-function Escape-DrawtextPath {
-    param([string]$Path)
-    # FFmpeg drawtext uses ':' as the option separator, so any colon in a Windows
-    # path (e.g. "C:/...") must be escaped as "\:". Forward slashes are fine.
-    return ($Path -replace '\\', '/') -replace ':', '\:'
+    return 0
 }
 
 Write-Host "YouTube relay starting. Ctrl+C to stop."
 
 while ($true) {
-    $restartHours   = [int](Get-Override 'stream_restart_hours' 0)
-    if ($restartHours -lt 0) { $restartHours = 0 }
-    $overlayEnabled = [bool](Get-Override 'stream_overlay_enabled' $false)
-
+    $restartHours = Get-RestartHours
     $ts = Get-Date -Format 'HH:mm:ss'
-    $ffmpegArgs = @('-i', $source)
-
-    if ($overlayEnabled) {
-        # Make sure the file exists so drawtext doesn't error on first read.
-        if (-not (Test-Path $overlayFile)) {
-            New-Item -Path $overlayFile -ItemType File -Force | Out-Null
-            Set-Content -Path $overlayFile -Value "Visits 0  In 0  Out 0  Key 0  Last --:--" -Encoding UTF8
-        }
-        $textPath = Escape-DrawtextPath $overlayFile
-        $fontPath = Escape-DrawtextPath $fontFile
-        $drawtext = "drawtext=textfile=${textPath}:reload=1:fontfile=${fontPath}:fontsize=24:fontcolor=black:bordercolor=white:borderw=2:x=20:y=20"
-        $ffmpegArgs += @(
-            '-vf', $drawtext,
-            '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency',
-            '-pix_fmt', 'yuv420p', '-b:v', '4500k', '-maxrate', '4500k',
-            '-bufsize', '9000k', '-g', '60',
-            '-c:a', 'aac', '-ar', '44100', '-b:a', '128k'
-        )
-    } else {
-        $ffmpegArgs += @('-c:v', 'copy', '-c:a', 'aac', '-ar', '44100', '-b:a', '128k')
-    }
-
-    $modeMsg = if ($overlayEnabled) { 'overlay re-encode' } else { 'stream copy' }
+    $ffmpegArgs = @('-i', $source, '-c:v', 'copy', '-c:a', 'aac', '-ar', '44100', '-b:a', '128k')
     if ($restartHours -gt 0) {
         $ffmpegArgs += @('-t', ($restartHours * 3600))
-        Write-Host "$ts Connecting to $source ($modeMsg, auto-restart every ${restartHours}h) ..."
+        Write-Host "$ts Connecting to $source (auto-restart every ${restartHours}h) ..."
     } else {
-        Write-Host "$ts Connecting to $source ($modeMsg) ..."
+        Write-Host "$ts Connecting to $source ..."
     }
     $ffmpegArgs += @('-f', 'flv', $dest)
     & $ffmpeg @ffmpegArgs
