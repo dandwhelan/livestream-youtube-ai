@@ -1,4 +1,6 @@
+import json
 import logging
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +11,10 @@ logger = logging.getLogger(__name__)
 
 _SCOPES = ["https://www.googleapis.com/auth/youtube"]
 _TOKEN_FILE = Path("credentials/youtube_token.json")
+_STATE_FILE = Path("logs/youtube_chapter_state.json")
+
+# Matches both "M:SS label" and "H:MM:SS label" chapter lines that we previously wrote.
+_CHAPTER_LINE_RE = re.compile(r"^(\d+):(\d{2})(?::(\d{2}))?\s+(.+)$")
 
 
 def _fmt_timestamp(seconds: int) -> str:
@@ -18,6 +24,43 @@ def _fmt_timestamp(seconds: int) -> str:
     if h:
         return f"{h}:{m:02d}:{s:02d}"
     return f"{m}:{s:02d}"
+
+
+def _parse_existing_chapters(description: str) -> list[tuple[int, str]]:
+    """Parse chapter lines we previously wrote into the broadcast description.
+    Returns a list of (offset_seconds, label) tuples, ordered as in the source."""
+    parsed: list[tuple[int, str]] = []
+    for raw_line in (description or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = _CHAPTER_LINE_RE.match(line)
+        if not m:
+            continue
+        a, b, c, label = m.groups()
+        if c is not None:
+            offset = int(a) * 3600 + int(b) * 60 + int(c)
+        else:
+            offset = int(a) * 60 + int(b)
+        parsed.append((offset, label.strip()))
+    return parsed
+
+
+def _load_chapter_state() -> dict:
+    try:
+        return json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_chapter_state(broadcast_id: str) -> None:
+    try:
+        _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _STATE_FILE.with_suffix(_STATE_FILE.suffix + ".tmp")
+        tmp.write_text(json.dumps({"broadcast_id": broadcast_id}), encoding="utf-8")
+        tmp.replace(_STATE_FILE)
+    except OSError:
+        logger.exception("Could not persist chapter state")
 
 
 class YouTubeChapters:
@@ -104,9 +147,6 @@ class YouTubeChapters:
         try:
             self._broadcast_id = broadcast["id"]
             snippet = broadcast["snippet"]
-            # Start each broadcast with a clean description — otherwise chapter
-            # lines from a previous session linger on the new broadcast and
-            # accumulate forever.
             self._original_description = ""
             self._live_chat_id = snippet.get("liveChatId")
 
@@ -118,6 +158,37 @@ class YouTubeChapters:
             else:
                 self._stream_start = datetime.now(timezone.utc)
 
+            # If we're re-attaching to the SAME broadcast (e.g. main.py restarted
+            # mid-stream) parse our own chapter lines back out of the existing
+            # description so the timeline stays continuous. For a NEW broadcast
+            # we still start fresh, which keeps prior sessions from leaking in.
+            saved_state = _load_chapter_state()
+            same_broadcast = saved_state.get("broadcast_id") == self._broadcast_id
+            existing = snippet.get("description", "")
+            restored = _parse_existing_chapters(existing) if same_broadcast else []
+            if restored:
+                self._chapters = sorted(restored, key=lambda x: x[0])
+                logger.info(
+                    "Re-attached to broadcast %s — restored %d chapters from existing description.",
+                    self._broadcast_id,
+                    len(self._chapters),
+                )
+            else:
+                self._chapters = [(0, settings.youtube_stream_title)]
+                if same_broadcast:
+                    logger.info(
+                        "Same broadcast %s but no parseable chapters in description — starting fresh list.",
+                        self._broadcast_id,
+                    )
+                else:
+                    logger.info(
+                        "New broadcast %s (was %s) — starting fresh chapter list.",
+                        self._broadcast_id,
+                        saved_state.get("broadcast_id"),
+                    )
+
+            _save_chapter_state(self._broadcast_id)
+
             self._enabled = True
             logger.info(
                 "YouTube chapter markers enabled. Broadcast: %s, started: %s, liveChatId: %s",
@@ -126,7 +197,6 @@ class YouTubeChapters:
                 "yes" if self._live_chat_id else "no",
             )
 
-            self._chapters = [(0, settings.youtube_stream_title)]
             self._push_description()
         except Exception:
             logger.exception("Failed to attach to YouTube broadcast")
