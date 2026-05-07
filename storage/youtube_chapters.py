@@ -260,11 +260,15 @@ class YouTubeChapters:
         except Exception:
             logger.exception("Failed to update YouTube chapter markers")
 
-        if is_key_moment and self._live_chat_id:
-            try:
-                self._post_live_chat(description)
-            except Exception:
-                logger.exception("Failed to post to YouTube live chat")
+        if is_key_moment:
+            if self._live_chat_id:
+                logger.info("Key moment — posting to YouTube Live Chat: %s", description[:80])
+                try:
+                    self._post_live_chat(description, force=description.startswith("⚠️"))
+                except Exception:
+                    logger.exception("Failed to post to YouTube live chat")
+            else:
+                logger.warning("Key moment but no liveChatId — chat post skipped.")
 
     def post_message(self, message: str) -> bool:
         """Public: post an arbitrary message to YouTube live chat. Returns True if sent."""
@@ -276,12 +280,12 @@ class YouTubeChapters:
             logger.exception("Failed to post live-chat message")
             return False
 
-    def _post_live_chat(self, message: str) -> bool:
+    def _post_live_chat(self, message: str, force: bool = False) -> bool:
         if self._chat_messages_today >= 200:
             logger.warning("YouTube Chat quota limit reached for today. Skipping message.")
             return False
 
-        if self._is_recent_duplicate(message):
+        if not force and self._is_recent_duplicate(message):
             logger.info("Suppressed near-duplicate live-chat message: %s", message)
             return False
 
