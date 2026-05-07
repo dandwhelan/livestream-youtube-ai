@@ -289,7 +289,7 @@ class YouTubeChapters:
             "snippet": {
                 "liveChatId": self._live_chat_id,
                 "type": "textMessageEvent",
-                "textMessageDetails": {"messageText": message[:200]},
+                "textMessageDetails": {"messageText": f"Bot: {message}"[:200]},
             }
         }
         self._service.liveChatMessages().insert(part="snippet", body=body).execute()
