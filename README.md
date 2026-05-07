@@ -28,6 +28,20 @@ pip install -r requirements.txt
 2. **Google Drive:** Run `python auth_drive.py` once to authenticate.
 3. **YouTube:** Run `python auth_youtube.py` once to authenticate your channel.
 
+## Nest Configuration (optional but recommended)
+
+Add these to your `.env` for richer chat responses and automatic stage tracking:
+
+```
+NEST_HATCH_DATE=YYYY-MM-DD   # e.g. 2026-05-01 — drives stage transitions and chick age display
+```
+
+You can also tune egg and death counts in `config/settings.py`:
+```python
+eggs_total = 7          # total eggs laid
+known_chick_deaths = 0  # bump this manually when a death is confirmed
+```
+
 ## Quick Start (Automated)
 
 You can launch all services (MediaMTX, AI Pipeline, Dashboard, and YouTube Relay) in one go using the provided scripts:
@@ -88,7 +102,10 @@ python dashboard.py
 - **Auto-Restart Watchdog:** A numeric input on the dashboard (`http://localhost:5000`) sets how often to recycle the YouTube relay (0 = disabled, max 24h) — useful as a defensive reset for long-running streams.
 - **Hourly Chat Update:** A one-line summary posts to YouTube live chat each hour: feeds today (counted from "entering" motion events, which catches every visit even when the AI cooldown skipped one), AI-confirmed key moments, last visit time, current nesting stage, and how the last hour compares to today's running average.
 - **Daily Milestone Celebrations:** Posts a one-liner to chat each time today's feed count crosses 25 / 50 / 100 / 150 / 200 / 250 / 300. Resets at midnight, restart-safe (won't re-fire thresholds already passed).
-- **Conversational Chat Replies:** Reads viewer messages and posts a Gemini-generated one-line reply to nest-related questions or @-mentions of the bot. Rate-limited (default 30 replies/day, 60s between replies) and quota-aware.
+- **Conversational Chat Replies:** Reads viewer messages and posts a Gemini-generated one-line reply to nest-related questions or @-mentions of the bot. Rate-limited (default 30 replies/day, 60s between replies) and quota-aware. Replies are enriched with chick age, last AI chick count, egg total, known deaths, and a curated biology facts block — so questions about poo, hygiene, lifespan, and chick development get properly informed answers.
+- **Great Tit Facts Poster:** Every 90 minutes a rotating "Did you know?" fact is posted to chat, covering fecal sacs (poo parcels the parents carry away), feeding rates (400–1,000 trips/day!), lifespan, chick development milestones, nest building, and more. 28 facts in the rotation before repeating.
+- **ALERT Flood Suppression:** If Gemini flags the same welfare concern (e.g. a displaced chick) repeatedly, the application compares the text to the last posted ALERT using word-overlap similarity. Duplicate ALERTs within a 2-hour window are silently suppressed, keeping chat readable.
+- **Chick Age in Hourly Update:** When `NEST_HATCH_DATE` is set in `.env`, the hourly stats line now includes "Day N since hatch" so viewers always know where the chicks are in their development.
 
 ## Testing Without Spamming Subscribers
 If you want to test the bot without notifying your YouTube followers:
