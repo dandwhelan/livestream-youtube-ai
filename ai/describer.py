@@ -8,6 +8,20 @@ import numpy as np
 
 from config.settings import settings, current_stage
 
+
+_ALERT_REPOST_HOURS = 2.0  # suppress duplicate ALERTs for this many hours
+
+
+def _word_overlap(a: str, b: str) -> float:
+    """Jaccard similarity of lowercased content words (ignores common stop words)."""
+    _STOP = {"a", "an", "the", "is", "in", "at", "of", "and", "or", "to", "as",
+             "it", "on", "are", "has", "be", "was", "for", "its", "with", "this"}
+    wa = {w for w in a.lower().split() if w not in _STOP and len(w) > 2}
+    wb = {w for w in b.lower().split() if w not in _STOP and len(w) > 2}
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
 logger = logging.getLogger(__name__)
 
 
@@ -197,6 +211,10 @@ class BirdDescriber:
         # "do not echo these" so Gemini stops opening every message the same way.
         self._recent_descriptions: list[str] = []
         self._max_recent_descriptions = 10
+        # Application-level ALERT dedup: suppress near-duplicate alerts for
+        # _ALERT_REPOST_HOURS to stop the same welfare concern flooding chat.
+        self._last_alert_text: str | None = None
+        self._last_alert_time: datetime | None = None
         logger.info("BirdDescriber initialised; current stage: %s", current_stage())
 
     def _recent_context(self, minutes: int = 60, max_items: int = 5) -> str:
@@ -297,6 +315,19 @@ class BirdDescriber:
                 is_key_moment = True
                 label = "ALERT"
                 description = "⚠️ " + description
+                # Suppress duplicate ALERTs: if the same welfare situation was
+                # already alerted within _ALERT_REPOST_HOURS, don't flood chat.
+                if self._last_alert_text and self._last_alert_time:
+                    hours_since = (datetime.now() - self._last_alert_time).total_seconds() / 3600
+                    overlap = _word_overlap(description, self._last_alert_text)
+                    if hours_since < _ALERT_REPOST_HOURS and overlap > 0.65:
+                        logger.info(
+                            "Suppressing duplicate ALERT (%.1fh ago, %.0f%% overlap): %s",
+                            hours_since, overlap * 100, description[:80],
+                        )
+                        return None, False
+                self._last_alert_text = description
+                self._last_alert_time = datetime.now()
             elif description.startswith("KEY_MOMENT:"):
                 is_key_moment = True
                 label = "KEY MOMENT"
@@ -358,20 +389,51 @@ class BirdDescriber:
 
     def respond_to_chat(self, viewer_message: str, viewer_name: str, stats: dict) -> str | None:
         """Generates a one-line warm reply to a viewer's chat message.
-        `stats` should include feeds_today, ai_confirmed, last_visit, stage."""
+        `stats` should include feeds_today, ai_confirmed, last_visit, stage,
+        chick_age_days, latest_chick_count, eggs_total, known_chick_deaths."""
         if not self.client:
             return None
+
+        chick_age_days = stats.get("chick_age_days")
+        latest_chick_count = stats.get("latest_chick_count")
+        eggs_total = stats.get("eggs_total", "?")
+        known_chick_deaths = stats.get("known_chick_deaths", 0)
+
+        chick_age_line = (
+            f"  - chicks are Day {chick_age_days} old\n" if chick_age_days is not None else ""
+        )
+        chick_count_line = (
+            f"  - last AI chick count visible: {latest_chick_count}\n"
+            if latest_chick_count is not None else ""
+        )
+        egg_lines = (
+            f"  - eggs laid: {eggs_total}\n"
+            f"  - known chick deaths: {known_chick_deaths}\n"
+        )
+
         prompt = (
             "You are the host of a Great Tit nest box live stream replying in YouTube chat. "
             "A viewer just asked or said something — write ONE short, warm, friendly reply, "
             "ideally referencing today's nest data when relevant. Keep it under 180 characters. "
-            "No hashtags, no emojis, no @ mentions. Don't pretend to know things you weren't told.\n\n"
+            "No hashtags, no emojis, no @ mentions. Don't pretend to know things you weren't told. "
+            "Vary your phrasing — avoid leading with the feed count every time.\n\n"
             f"VIEWER ({viewer_name}): {viewer_message}\n\n"
             "TODAY'S DATA:\n"
             f"  - feeds today: {stats.get('feeds_today', 0)}\n"
             f"  - AI-confirmed key moments: {stats.get('ai_confirmed', 0)}\n"
             f"  - last visit: {stats.get('last_visit', '—')}\n"
-            f"  - current nesting stage: {stats.get('stage', 'unknown')}\n\n"
+            f"  - current nesting stage: {stats.get('stage', 'unknown')}\n"
+            f"{chick_age_line}"
+            f"{chick_count_line}"
+            f"{egg_lines}"
+            "\nUSEFUL FACTS (use only if directly relevant to the viewer's question):\n"
+            "  - Chicks produce fecal sacs (gelatinous poo parcels) that parents carry away.\n"
+            "  - A nestling can produce ~50 fecal sacs per day in week 1.\n"
+            "  - Older chicks back up to the entrance and eject the sac out of the hole.\n"
+            "  - Parents make 400-1000 feeding trips per day at peak nestling stage.\n"
+            "  - Chicks cannot regulate temperature until ~day 10, hence brooding.\n"
+            "  - Great Tit lifespan: typically 2-3 years in the wild; UK record is 15 years.\n"
+            "  - Adults weigh just 14-22g — about the weight of a few coins.\n\n"
             "Reply (one line, no quotes):"
         )
         try:

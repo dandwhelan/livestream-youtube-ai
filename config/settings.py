@@ -91,6 +91,15 @@ class Settings:
     # leaves the nest (i.e. an entrance event with direction=leaving).
     chick_count_enabled: bool = True
 
+    # Egg and chick tracking — used in chat responses and hourly stats.
+    # known_chick_deaths can be bumped manually when a death is confirmed.
+    eggs_total: int = 7
+    known_chick_deaths: int = 0
+
+    # Did You Know facts poster: posts a rotating Great Tit fact to live chat.
+    facts_poster_enabled: bool = True
+    facts_poster_interval_minutes: int = 90
+
     # Daily summary: posts a Gemini-generated recap to YouTube live chat.
     daily_summary_enabled: bool = True
     daily_summary_hour: int = 21  # local time, 24h
