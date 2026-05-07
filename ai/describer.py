@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -108,14 +109,38 @@ class BirdDescriber:
     Returns (description_string, is_key_moment).
     """
 
-    def __init__(self):
+    def __init__(self, activity_log=None):
         if not settings.gemini_api_key:
             logger.warning("GEMINI_API_KEY is not set. AI descriptions will be disabled.")
             self.client = None
         else:
             self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.gemini_model
+        self._log = activity_log
         logger.info("BirdDescriber initialised; current stage: %s", current_stage())
+
+    def _recent_context(self, minutes: int = 60, max_items: int = 5) -> str:
+        """Returns a short bullet list of the most recent ALERT / KEY_MOMENT
+        descriptions so the AI can comment on whether their status has changed."""
+        if not self._log:
+            return ""
+        try:
+            cutoff = datetime.now() - timedelta(minutes=minutes)
+            events = self._log.events_since(cutoff)
+        except Exception:
+            return ""
+        notable = [
+            e for e in events
+            if e.get("ai_description") and e.get("is_key_moment")
+        ]
+        if not notable:
+            return ""
+        lines = []
+        for e in notable[-max_items:]:
+            ts = (e.get("event_start") or "")[11:16]  # HH:MM
+            desc = (e.get("ai_description") or "").strip().replace("\n", " ")[:140]
+            lines.append(f"- {ts} {desc}")
+        return "\n".join(lines)
 
     def describe_frame(self, frame: np.ndarray) -> tuple[str | None, bool]:
         if not self.client:
@@ -125,9 +150,22 @@ class BirdDescriber:
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb)
 
+            prompt = build_prompt(current_stage())
+            recent = self._recent_context()
+            if recent:
+                prompt = (
+                    f"{prompt}\n\n"
+                    f"RECENT OBSERVATIONS (last 60 minutes, most recent last):\n{recent}\n\n"
+                    "If the current frame appears to be a status update on any of those "
+                    "situations (e.g. a previously-displaced chick is now back in the cup, "
+                    "or still alone in a corner; a previously-flagged intruder has left), "
+                    "say so briefly in your description. You cannot know outcomes you can't "
+                    "see — only describe what is currently visible."
+                )
+
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=[pil_img, build_prompt(current_stage())],
+                contents=[pil_img, prompt],
                 config=types.GenerateContentConfig(temperature=0.4),
             )
 
