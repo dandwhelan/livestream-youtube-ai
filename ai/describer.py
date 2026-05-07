@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -18,7 +19,11 @@ STAGE_CONTEXT = {
         "that is the DAD arriving to feed — flag this as a KEY MOMENT. "
         "Expect frequent food deliveries (caterpillars, grubs, insects); every successful feeding is a key moment. "
         "Other key moments: a chick visibly being fed, eggshells being removed, "
-        "fecal sacs being carried out (parental hygiene), or a freshly hatched chick."
+        "fecal sacs being carried out (parental hygiene), or a freshly hatched chick.\n"
+        "WELFARE WATCH: Newly hatched chicks are fragile and can be accidentally pushed out of the nest cup "
+        "by a parent's feet or wings. A chick lying alone in a corner of the box, away from the nest cup or "
+        "its siblings, is in serious trouble — it cannot regulate its own temperature. Treat this as an ALERT, "
+        "not a routine event."
     ),
     "incubation": (
         "STAGE CONTEXT — INCUBATION: The mother is sitting on eggs almost continuously. "
@@ -47,14 +52,25 @@ def build_prompt(stage: str) -> str:
     stage_text = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["empty"])
     return (
         "You are a wildlife expert watching a live Great Tit nest box camera. "
-        "A motion event was just detected. "
-        "Analyze the image and describe exactly what is happening in 1 short sentence.\n\n"
+        "A motion event was just detected.\n\n"
+        "BEFORE DESCRIBING: scan the ENTIRE frame edge-to-edge — top, bottom, all four corners — "
+        "not just where the obvious motion is. Look specifically for: "
+        "(a) any chick lying outside the main nest cup or away from its siblings, "
+        "(b) any motionless or limp body anywhere in the frame, "
+        "(c) damaged or cracked eggs, "
+        "(d) a non-Great-Tit species (sparrow, woodpecker, predator), "
+        "(e) parts of a bird visible at the entrance hole. "
+        "If you spot any of these, report it — it matters even if the main action is something else.\n\n"
         f"{stage_text}\n\n"
         "Output rules — start your response with EXACTLY ONE of these prefixes:\n"
-        "  'KEY_MOMENT: '  → for feeding, hatching, food delivery, dad visiting, eggshell/fecal-sac removal, "
-        "or anything notable for the live chat. Follow with a fun, engaging YouTube Live Chat comment.\n"
-        "  (no prefix)    → routine activity (mum brooding, sitting still, minor adjustments).\n"
-        "Be extremely concise."
+        "  'ALERT: '       → a chick displaced from the nest cup, a motionless/limp body, "
+        "an intruder species, a damaged egg, or any other welfare concern. "
+        "Follow with a clear, urgent description naming WHERE in the frame the issue is "
+        "(e.g. 'bottom-left corner', 'near the entrance'). This stays visible to viewers.\n"
+        "  'KEY_MOMENT: '  → feeding, food delivery, dad visiting, eggshell/fecal-sac removal, "
+        "hatching, or anything notable for the live chat. Follow with a fun, engaging comment.\n"
+        "  (no prefix)     → routine activity (mum brooding, sitting still, minor adjustments).\n"
+        "Be concise but DO mention anything unusual you noticed elsewhere in the frame."
     )
 
 
@@ -93,14 +109,38 @@ class BirdDescriber:
     Returns (description_string, is_key_moment).
     """
 
-    def __init__(self):
+    def __init__(self, activity_log=None):
         if not settings.gemini_api_key:
             logger.warning("GEMINI_API_KEY is not set. AI descriptions will be disabled.")
             self.client = None
         else:
             self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.gemini_model
+        self._log = activity_log
         logger.info("BirdDescriber initialised; current stage: %s", current_stage())
+
+    def _recent_context(self, minutes: int = 60, max_items: int = 5) -> str:
+        """Returns a short bullet list of the most recent ALERT / KEY_MOMENT
+        descriptions so the AI can comment on whether their status has changed."""
+        if not self._log:
+            return ""
+        try:
+            cutoff = datetime.now() - timedelta(minutes=minutes)
+            events = self._log.events_since(cutoff)
+        except Exception:
+            return ""
+        notable = [
+            e for e in events
+            if e.get("ai_description") and e.get("is_key_moment")
+        ]
+        if not notable:
+            return ""
+        lines = []
+        for e in notable[-max_items:]:
+            ts = (e.get("event_start") or "")[11:16]  # HH:MM
+            desc = (e.get("ai_description") or "").strip().replace("\n", " ")[:140]
+            lines.append(f"- {ts} {desc}")
+        return "\n".join(lines)
 
     def describe_frame(self, frame: np.ndarray) -> tuple[str | None, bool]:
         if not self.client:
@@ -110,22 +150,42 @@ class BirdDescriber:
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb)
 
+            prompt = build_prompt(current_stage())
+            recent = self._recent_context()
+            if recent:
+                prompt = (
+                    f"{prompt}\n\n"
+                    f"RECENT OBSERVATIONS (last 60 minutes, most recent last):\n{recent}\n\n"
+                    "If the current frame appears to be a status update on any of those "
+                    "situations (e.g. a previously-displaced chick is now back in the cup, "
+                    "or still alone in a corner; a previously-flagged intruder has left), "
+                    "say so briefly in your description. You cannot know outcomes you can't "
+                    "see — only describe what is currently visible."
+                )
+
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=[pil_img, build_prompt(current_stage())],
+                contents=[pil_img, prompt],
                 config=types.GenerateContentConfig(temperature=0.4),
             )
 
             description = response.text.strip()
             is_key_moment = False
+            label = "Routine"
 
-            if description.startswith("KEY_MOMENT:"):
+            if description.startswith("ALERT:"):
+                # Welfare concern — keep the "ALERT:" prefix in the message so
+                # viewers see the warning prominently.
                 is_key_moment = True
+                label = "ALERT"
+                description = "⚠️ " + description
+            elif description.startswith("KEY_MOMENT:"):
+                is_key_moment = True
+                label = "KEY MOMENT"
                 description = description.replace("KEY_MOMENT:", "").strip()
 
             if description:
-                prefix = "KEY MOMENT" if is_key_moment else "Routine"
-                logger.info("AI Description [%s]: %s", prefix, description)
+                logger.info("AI Description [%s]: %s", label, description)
 
             return description or None, is_key_moment
 

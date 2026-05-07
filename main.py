@@ -260,7 +260,7 @@ def main() -> None:
 
     # Instantiate components
     _activity_log = ActivityLog()
-    _describer = BirdDescriber()
+    _describer = BirdDescriber(activity_log=_activity_log)
     _extractor = ClipExtractor()
     _drive_uploader = DriveUploader(_activity_log)
     _drive_uploader.start()
