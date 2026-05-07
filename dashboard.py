@@ -167,8 +167,12 @@ HTML = """
         <input type="number" id="stream_restart_hours" name="stream_restart_hours"
                min="0" max="24" step="1" value="{{ stream_restart_hours }}">
         <span>hours</span>
+        <label style="margin-left:16px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" name="stream_overlay_enabled" {% if stream_overlay_enabled %}checked{% endif %}>
+          <span>Burn stats onto YouTube stream</span>
+        </label>
         <button type="submit">Save</button>
-        <span class="hint">0 = disabled. Takes effect after the next FFmpeg restart.</span>
+        <span class="hint">Overlay re-encodes the feed (libx264, ~15–40% of one core). Takes effect on next FFmpeg restart.</span>
       </form>
     </div>
 
@@ -432,6 +436,7 @@ def update_settings():
     except ValueError:
         hours = 0
     settings.stream_restart_hours = max(0, min(24, hours))
+    settings.stream_overlay_enabled = request.form.get("stream_overlay_enabled") == "on"
     save_overrides()
     return redirect(url_for("index"))
 
@@ -476,6 +481,7 @@ def index():
         key_moments=key_moments,
         heatmap=heatmap,
         stream_restart_hours=settings.stream_restart_hours,
+        stream_overlay_enabled=settings.stream_overlay_enabled,
     )
 
 

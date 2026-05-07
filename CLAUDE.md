@@ -63,6 +63,7 @@ RTMP camera → StreamReader (background thread)
 Sidecar services started by main.py:
   - DailySummary  → end-of-day Gemini recap posted to YouTube live chat
   - SilentAlarm   → warns to chat if no Key Moment seen for N minutes during daylight
+  - OverlayWriter → writes logs/overlay_stats.txt every 10s (visits/in/out/key/last) for FFmpeg drawtext
   - debug_server  → motion-tuning UI on http://localhost:5001 (live MJPEG + sliders + exclusion zones)
 ```
 
@@ -97,6 +98,7 @@ Key settings:
 | `daily_summary_enabled` / `daily_summary_hour` | End-of-day recap to live chat |
 | `silent_alarm_enabled` / `silent_alarm_minutes` | Warn if no Key Moment for N minutes during daylight |
 | `stream_restart_hours` | Auto-restart the YouTube relay every N hours (0 = off, max 24). Editable from the dashboard. |
+| `stream_overlay_enabled` | Burn the stats overlay into the YouTube feed via FFmpeg `drawtext`. Forces re-encoding (libx264). Editable from the dashboard. |
 | `drive_key_moments_subfolder` | Drive folder name for important clips |
 
 Live tuning UIs:
@@ -110,4 +112,5 @@ Live tuning UIs:
 - `logs/activity_log.json` — append-only JSON array of all events, `is_key_moment`, `motion_zone`, `motion_direction`, `chick_count`, and Drive URLs
 - `logs/birdbox.log` — rotating app log
 - `config/overrides.json` — persisted live-tuning values
+- `logs/overlay_stats.txt` — single-line stats string consumed by FFmpeg `drawtext` (atomic write)
 - Google Drive: `BirdBox/clips/` and `BirdBox/Key Moments/`
