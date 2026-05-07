@@ -14,7 +14,6 @@ _TUNING_KEYS = (
     "motion_min_area_nest",
     "entrance_zone_bottom",
     "stream_restart_hours",
-    "stream_overlay_enabled",
 )
 
 # Great Tit phenology used for auto-stage transitions when hatch_date is set.
@@ -101,6 +100,12 @@ class Settings:
     silent_alarm_minutes: int = 90
     silent_alarm_enabled: bool = True
 
+    # Hourly stats post to YouTube live chat. Reports today's "feeds"
+    # (count of entering events — see monitoring/hourly_stats.py for why
+    # this is a more reliable count than AI-confirmed key moments).
+    hourly_stats_enabled: bool = True
+    hourly_stats_interval_minutes: int = 60
+
     # Google Drive
     drive_credentials_path: Path = field(
         default_factory=lambda: Path(
@@ -124,11 +129,6 @@ class Settings:
     # Auto-restart the YouTube relay (FFmpeg) every N hours. 0 = disabled.
     # The relay reads this from config/overrides.json on each iteration.
     stream_restart_hours: int = 0
-
-    # Burn the live stats overlay (visits / in / out / key / last seen) into the
-    # video that goes to YouTube via FFmpeg's drawtext filter. Off by default
-    # because it forces re-encoding (libx264) instead of -c copy.
-    stream_overlay_enabled: bool = False
 
 
 settings = Settings()
