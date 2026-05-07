@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from config.settings import settings
@@ -79,6 +79,7 @@ class YouTubeChapters:
         self._chapters: list[tuple[int, str]] = []  # (offset_seconds, label)
         self._live_chat_id: str | None = None
         self._chat_messages_today: int = 0
+        self._recent_posts: list[tuple[datetime, str]] = []  # (sent_at, message) for dedup
         self._lock = threading.Lock()
         self._enabled = False
         self._stop_event = threading.Event()
@@ -240,6 +241,10 @@ class YouTubeChapters:
             logger.warning("YouTube Chat quota limit reached for today. Skipping message.")
             return
 
+        if self._is_recent_duplicate(message):
+            logger.info("Suppressed near-duplicate live-chat message: %s", message)
+            return
+
         body = {
             "snippet": {
                 "liveChatId": self._live_chat_id,
@@ -249,7 +254,38 @@ class YouTubeChapters:
         }
         self._service.liveChatMessages().insert(part="snippet", body=body).execute()
         self._chat_messages_today += 1
+        self._remember_post(message)
         logger.info("Posted to YouTube Live Chat: %s (Usage: %d/200)", message, self._chat_messages_today)
+
+    @staticmethod
+    def _normalise(text: str) -> set[str]:
+        """Lowercased word set, with very common stopwords stripped, for similarity checks."""
+        stop = {"the", "a", "an", "is", "of", "to", "in", "on", "at", "and", "with", "for"}
+        return {w for w in re.findall(r"[a-z]+", (text or "").lower()) if w and w not in stop}
+
+    def _is_recent_duplicate(self, message: str) -> bool:
+        """Suppress if a message with >=70% token overlap was posted in the last 30 minutes."""
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=30)
+        with self._lock:
+            self._recent_posts = [(t, m) for (t, m) in self._recent_posts if t >= cutoff]
+            recent = list(self._recent_posts)
+
+        new_tokens = self._normalise(message)
+        if not new_tokens:
+            return False
+        for _, prev in recent:
+            prev_tokens = self._normalise(prev)
+            if not prev_tokens:
+                continue
+            overlap = len(new_tokens & prev_tokens) / max(len(new_tokens), len(prev_tokens))
+            if overlap >= 0.7:
+                return True
+        return False
+
+    def _remember_post(self, message: str) -> None:
+        with self._lock:
+            self._recent_posts.append((datetime.now(timezone.utc), message))
 
     def _push_description(self) -> None:
         with self._lock:

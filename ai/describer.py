@@ -155,12 +155,18 @@ class BirdDescriber:
             if recent:
                 prompt = (
                     f"{prompt}\n\n"
-                    f"RECENT OBSERVATIONS (last 60 minutes, most recent last):\n{recent}\n\n"
-                    "If the current frame appears to be a status update on any of those "
-                    "situations (e.g. a previously-displaced chick is now back in the cup, "
-                    "or still alone in a corner; a previously-flagged intruder has left), "
-                    "say so briefly in your description. You cannot know outcomes you can't "
-                    "see — only describe what is currently visible."
+                    "ALREADY POSTED IN THE LAST 60 MINUTES (most recent last). "
+                    "Viewers have ALREADY SEEN these — do NOT repeat them:\n"
+                    f"{recent}\n\n"
+                    "Rules of engagement:\n"
+                    "  - If the current frame clearly shows a prior ALERT has been RESOLVED "
+                    "(chick back with siblings, intruder has left, motionless body removed), "
+                    "report it as a KEY_MOMENT (good news), NOT as another ALERT.\n"
+                    "  - If a prior ALERT situation is UNCHANGED, do NOT mention it at all. "
+                    "Describe only the new activity in this frame.\n"
+                    "  - Only use ALERT for a NEW welfare concern that is not already in the list above.\n"
+                    "  - Vary your phrasing across messages — do not open consecutive messages "
+                    "with the same words. Avoid repeating exact phrases from the list above."
                 )
 
             response = self.client.models.generate_content(
