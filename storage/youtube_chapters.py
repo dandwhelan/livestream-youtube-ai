@@ -271,32 +271,32 @@ class YouTubeChapters:
         if not self._enabled or not self._live_chat_id or not message:
             return False
         try:
-            self._post_live_chat(message)
-            return True
+            return self._post_live_chat(message)
         except Exception:
             logger.exception("Failed to post live-chat message")
             return False
 
-    def _post_live_chat(self, message: str) -> None:
+    def _post_live_chat(self, message: str) -> bool:
         if self._chat_messages_today >= 200:
             logger.warning("YouTube Chat quota limit reached for today. Skipping message.")
-            return
+            return False
 
         if self._is_recent_duplicate(message):
             logger.info("Suppressed near-duplicate live-chat message: %s", message)
-            return
+            return False
 
         body = {
             "snippet": {
                 "liveChatId": self._live_chat_id,
                 "type": "textMessageEvent",
-                "textMessageDetails": {"messageText": message[:200]},
+                "textMessageDetails": {"messageText": f"Bot: {message}"[:200]},
             }
         }
         self._service.liveChatMessages().insert(part="snippet", body=body).execute()
         self._chat_messages_today += 1
         self._remember_post(message)
         logger.info("Posted to YouTube Live Chat: %s (Usage: %d/200)", message, self._chat_messages_today)
+        return True
 
     @staticmethod
     def _normalise(text: str) -> set[str]:
@@ -328,16 +328,23 @@ class YouTubeChapters:
         with self._lock:
             self._recent_posts.append((datetime.now(timezone.utc), message))
 
+    _MAX_DESC_LEN = 5000
+
     def _push_description(self) -> None:
         with self._lock:
-            chapter_lines = "\n".join(
-                f"{_fmt_timestamp(t)} {label}" for t, label in self._chapters
-            )
+            chapters = list(self._chapters)
 
-        if self._original_description:
-            full_description = f"{self._original_description}\n\n{chapter_lines}"
-        else:
-            full_description = chapter_lines
+        prefix = f"{self._original_description}\n\n" if self._original_description else ""
+
+        # Drop oldest non-title chapters until the description fits YouTube's limit.
+        while len(chapters) > 1:
+            chapter_lines = "\n".join(f"{_fmt_timestamp(t)} {label}" for t, label in chapters)
+            if len(prefix) + len(chapter_lines) <= self._MAX_DESC_LEN:
+                break
+            chapters.pop(1)
+
+        chapter_lines = "\n".join(f"{_fmt_timestamp(t)} {label}" for t, label in chapters)
+        full_description = (prefix + chapter_lines)[: self._MAX_DESC_LEN]
 
         # Fetch current snippet to avoid clobbering other fields
         resp = (
@@ -352,7 +359,7 @@ class YouTubeChapters:
             part="snippet",
             body={"id": self._broadcast_id, "snippet": snippet},
         ).execute()
-        logger.debug("YouTube description updated (%d chapters)", len(self._chapters))
+        logger.debug("YouTube description updated (%d chapters, %d shown)", len(self._chapters), len(chapters))
 
     def stop(self) -> None:
         self._enabled = False
