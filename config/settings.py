@@ -100,6 +100,12 @@ class Settings:
     silent_alarm_minutes: int = 90
     silent_alarm_enabled: bool = True
 
+    # Hourly stats post to YouTube live chat. Reports today's "feeds"
+    # (count of entering events — see monitoring/hourly_stats.py for why
+    # this is a more reliable count than AI-confirmed key moments).
+    hourly_stats_enabled: bool = True
+    hourly_stats_interval_minutes: int = 60
+
     # Google Drive
     drive_credentials_path: Path = field(
         default_factory=lambda: Path(
