@@ -94,7 +94,20 @@ class Settings:
     # Egg and chick tracking — used in chat responses and hourly stats.
     # known_chick_deaths can be bumped manually when a death is confirmed.
     eggs_total: int = 7
-    known_chick_deaths: int = 0
+    known_chick_deaths: int = 1
+
+    # If a chick (or other subject) has died and is still visible in the frame,
+    # set this to a plain-English description of the situation so the AI is told
+    # to stop alerting or commenting on it. Empty string = no override.
+    dead_chick_note: str = (
+        "CONFIRMED DEATH — DO NOT MENTION: There is a dead chick lying in the "
+        "bottom-left corner of the box. Its death has already been confirmed by "
+        "the streamer. Do NOT alert about it. Do NOT describe it as resting, "
+        "sleeping, displaced, or 'outside the nest cup'. Do NOT mention it at "
+        "all — not as background detail, not as context, not as a welfare concern. "
+        "It is not relevant to your commentary. Focus only on the living chicks "
+        "and the parent birds."
+    )
 
     # Did You Know facts poster: posts a rotating Great Tit fact to live chat.
     facts_poster_enabled: bool = True

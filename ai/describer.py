@@ -92,6 +92,7 @@ def build_prompt(
     is_first_event_today: bool = False,
     last_visit_duration: int | None = None,
     avoid_phrasings: list[str] | None = None,
+    dead_chick_note: str = "",
 ) -> str:
     stage_text = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["empty"])
 
@@ -142,6 +143,9 @@ def build_prompt(
 
     parts.append(stage_text)
 
+    if dead_chick_note:
+        parts.append(dead_chick_note)
+
     parts.append(
         "POSITION GUIDANCE: When describing locations, left/right are as seen by the camera looking down into the box "
         "(i.e. from the viewer's perspective on screen). Double-check before writing 'left' or 'right' — "
@@ -170,13 +174,18 @@ def build_prompt(
     return "\n\n".join(parts)
 
 
-_CHICK_COUNT_PROMPT = (
-    "You are looking at a Great Tit nest box from above. The mother has just left "
-    "and the chicks should now be visible in the nest cup. "
-    "Count the number of chicks you can clearly see. "
-    "Respond with ONLY a single integer (e.g. '5'). "
-    "If you cannot see any chicks or cannot tell, respond with '0'."
-)
+def _chick_count_prompt() -> str:
+    base = (
+        "You are looking at a Great Tit nest box from above. The mother has just left "
+        "and the chicks should now be visible in the nest cup. "
+        "Count only the LIVING chicks you can clearly see. "
+        "Respond with ONLY a single integer (e.g. '5'). "
+        "If you cannot see any chicks or cannot tell, respond with '0'."
+    )
+    note = settings.dead_chick_note
+    if note:
+        base = f"{note}\n\n{base}"
+    return base
 
 
 def _summary_prompt(events: list[dict]) -> str:
@@ -286,6 +295,7 @@ class BirdDescriber:
                 is_first_event_today=is_first_event,
                 last_visit_duration=last_duration,
                 avoid_phrasings=list(self._recent_descriptions),
+                dead_chick_note=settings.dead_chick_note,
             )
             recent = self._recent_context()
             if recent:
@@ -363,7 +373,7 @@ class BirdDescriber:
             pil_img = Image.fromarray(img_rgb)
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=[pil_img, _CHICK_COUNT_PROMPT],
+                contents=[pil_img, _chick_count_prompt()],
                 config=types.GenerateContentConfig(temperature=0.0),
             )
             text = (response.text or "").strip()
