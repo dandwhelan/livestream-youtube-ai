@@ -71,18 +71,21 @@ RTMP camera → StreamReader (background thread)
 Sidecar services started by main.py:
   - DailySummary  → end-of-day Gemini recap posted to YouTube live chat
   - SilentAlarm   → warns to chat if no Key Moment seen for N minutes during daylight
-  - HourlyStats   → posts a one-line "Hourly update" to YouTube chat each hour with feeds/AI-confirmed/last-visit/stage
+  - HourlyStats   → posts a one-line "Hourly update" to YouTube chat each hour with feeds/AI-confirmed/last-visit/stage/chick age
   - MilestoneAnnouncer → posts a celebration to chat when today's feed count crosses 25/50/100/150/200/250/300
   - ChatResponder → reads viewer chat, replies to nest-related questions or @-mentions with a Gemini one-liner
+  - FactsPoster   → posts a rotating "Did you know?" Great Tit fact every 90 minutes (biology, poo, lifespan, development)
   - debug_server  → motion-tuning UI on http://localhost:5001 (live MJPEG + sliders + exclusion zones)
 ```
 
 **Key design decisions:**
 
 - `BirdDescriber` uses Google Gemini to analyze frames and detect `is_key_moment`, plus a `count_chicks` call when mum leaves the nest.
+- `BirdDescriber` has **application-level ALERT dedup**: if Gemini returns an ALERT whose content is ≥65% similar (Jaccard word overlap) to the last ALERT within 2 hours, it is silently suppressed and not posted. This prevents the same welfare concern flooding chat on every motion event.
 - `MotionDetector` uses **zone-based detection**: the entrance (top 12% of frame) is very sensitive to catch arrivals/departures, while the nest zone (bottom 88%) requires much larger movement to ignore the mum fidgeting. Motion callbacks are dispatched on a background thread so the reader never falls behind.
 - `MotionDetector` has a **stage- and time-of-day-aware cooldown** to protect the YouTube Live Chat 200 msgs/day quota. Cooldowns are looked up by current nesting stage in `_STAGE_COOLDOWNS` (e.g. `nestling` = 120s day / 1800s night, `incubation` = 300s / 3600s).
 - **Nesting stage** is auto-derived from `NEST_HATCH_DATE` (env var, `YYYY-MM-DD`) using Great Tit phenology in `_STAGE_BOUNDARIES`. If unset, falls back to `settings.nesting_stage`. Stage drives both cooldowns and the AI prompt context.
+- **ChatResponder** passes enriched stats to Gemini when answering viewer questions: chick age in days, last AI chick count, total eggs laid, and known chick deaths — plus a curated poo/biology facts block so answers about hygiene, lifespan, and development are properly informed.
 - **Fledge-watch**: during the `fledging` stage, motion thresholds and minimum areas are multiplied down (`fledge_threshold_multiplier`, `fledge_min_area_multiplier`) so wing-flaps near the entrance still trigger.
 - **Exclusion zones** (frame-fraction rectangles) silently drop contour centroids that land inside them. Tunable live via the debug server.
 - `ClipExtractor` uses `-c copy` (stream copy) to preserve original camera quality without re-encoding.
@@ -112,6 +115,9 @@ Key settings:
 | `chat_responder_enabled` / `chat_responder_poll_seconds` / `chat_responder_max_per_day` / `chat_responder_min_seconds_between_responses` | Read viewer chat and reply via Gemini to nest-related questions or @-mentions. Default poll 60s, max 30 replies/day, 60s minimum between replies. Uses YouTube Data API quota for reads — bump the poll interval up if quota is tight. |
 | `stream_restart_hours` | Auto-restart the YouTube relay every N hours (0 = off, max 24). Editable from the dashboard. |
 | `drive_key_moments_subfolder` | Drive folder name for important clips |
+| `eggs_total` | Total eggs laid at the start of the clutch (default: 7). Shown in chat responses to give context. |
+| `known_chick_deaths` | Manually bumped when a chick death is confirmed; included in chat reply context. |
+| `facts_poster_enabled` / `facts_poster_interval_minutes` | Post a rotating "Did you know?" Great Tit fact to chat every N minutes (default 90). 28 facts covering poo/fecal sacs, feeding rates, lifespan, chick development, and more. |
 
 Live tuning UIs:
 - **Dashboard** (`http://localhost:5000`) — activity log, heatmap, HLS preview, `stream_restart_hours` input.
