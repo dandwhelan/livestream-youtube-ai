@@ -73,6 +73,7 @@ Sidecar services started by main.py:
   - SilentAlarm   → warns to chat if no Key Moment seen for N minutes during daylight
   - HourlyStats   → posts a one-line "Hourly update" to YouTube chat each hour with feeds/AI-confirmed/last-visit/stage
   - MilestoneAnnouncer → posts a celebration to chat when today's feed count crosses 25/50/100/150/200/250/300
+  - ChatResponder → reads viewer chat, replies to nest-related questions or @-mentions with a Gemini one-liner
   - debug_server  → motion-tuning UI on http://localhost:5001 (live MJPEG + sliders + exclusion zones)
 ```
 
@@ -108,6 +109,7 @@ Key settings:
 | `silent_alarm_enabled` / `silent_alarm_minutes` | Warn if no Key Moment for N minutes during daylight |
 | `hourly_stats_enabled` / `hourly_stats_interval_minutes` | Post a one-line stats update to YouTube live chat every N minutes (default 60). |
 | `daily_milestones_enabled` | Celebrate in chat when today's feed count crosses thresholds (25/50/100/150/200/250/300). On main.py restart, already-passed thresholds are seeded as "announced" so they don't all fire at once. |
+| `chat_responder_enabled` / `chat_responder_poll_seconds` / `chat_responder_max_per_day` / `chat_responder_min_seconds_between_responses` | Read viewer chat and reply via Gemini to nest-related questions or @-mentions. Default poll 60s, max 30 replies/day, 60s minimum between replies. Uses YouTube Data API quota for reads — bump the poll interval up if quota is tight. |
 | `stream_restart_hours` | Auto-restart the YouTube relay every N hours (0 = off, max 24). Editable from the dashboard. |
 | `drive_key_moments_subfolder` | Drive folder name for important clips |
 

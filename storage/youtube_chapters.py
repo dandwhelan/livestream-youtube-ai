@@ -80,10 +80,51 @@ class YouTubeChapters:
         self._live_chat_id: str | None = None
         self._chat_messages_today: int = 0
         self._recent_posts: list[tuple[datetime, str]] = []  # (sent_at, message) for dedup
+        self._my_channel_id: str | None = None
         self._lock = threading.Lock()
         self._enabled = False
         self._stop_event = threading.Event()
         self._poll_thread: threading.Thread | None = None
+
+    def is_ready(self) -> bool:
+        return self._enabled and self._live_chat_id is not None
+
+    def my_channel_id(self) -> str | None:
+        """Returns this bot's own YouTube channel id, looked up once and cached."""
+        if self._my_channel_id is not None or self._service is None:
+            return self._my_channel_id
+        try:
+            resp = self._service.channels().list(part="id", mine=True).execute()
+            items = resp.get("items", [])
+            if items:
+                self._my_channel_id = items[0]["id"]
+                logger.info("Bot channel id: %s", self._my_channel_id)
+        except Exception:
+            logger.exception("Could not fetch bot channel id")
+        return self._my_channel_id
+
+    def read_chat_messages(self, page_token: str | None = None) -> tuple[list[dict], str | None, int]:
+        """Returns (messages, next_page_token, polling_interval_millis).
+        Empty list when chat is not yet attached or on transient API errors.
+        Each message dict is the raw YouTube liveChatMessages.list item."""
+        if not self.is_ready():
+            return [], None, 5000
+        try:
+            kwargs = {
+                "liveChatId": self._live_chat_id,
+                "part": "id,snippet,authorDetails",
+            }
+            if page_token:
+                kwargs["pageToken"] = page_token
+            resp = self._service.liveChatMessages().list(**kwargs).execute()
+            return (
+                resp.get("items", []),
+                resp.get("nextPageToken"),
+                int(resp.get("pollingIntervalMillis", 5000)),
+            )
+        except Exception:
+            logger.exception("Failed to read chat messages")
+            return [], None, 5000
 
     def start(self) -> None:
         if not _TOKEN_FILE.exists():

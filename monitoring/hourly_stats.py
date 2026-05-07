@@ -11,7 +11,7 @@ count is the most reliable proxy for "how many visits today".
 import json
 import logging
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from config.settings import settings, current_stage
@@ -59,25 +59,71 @@ class HourlyStats:
         out_count = sum(1 for e in today if e.get("motion_direction") == "leaving")
         key = sum(1 for e in today if e.get("is_key_moment"))
 
+        last_visit_dt: datetime | None = None
         last_visit = "—"
         if today:
             try:
-                dt = datetime.fromisoformat(today[-1].get("event_start", ""))
-                if dt.tzinfo:
-                    dt = dt.astimezone()
-                last_visit = dt.strftime("%H:%M")
+                last_visit_dt = datetime.fromisoformat(today[-1].get("event_start", ""))
+                if last_visit_dt.tzinfo:
+                    last_visit_dt = last_visit_dt.astimezone().replace(tzinfo=None)
+                last_visit = last_visit_dt.strftime("%H:%M")
             except Exception:
-                pass
+                last_visit_dt = None
 
-        now_label = datetime.now().strftime("%H:%M")
+        now = datetime.now()
+        last_hour_feeds = self._count_last_hour_entering(today, now)
+        baseline = self._baseline_comparison(today, last_hour_feeds, now)
+
         stage = current_stage()
         msg = (
-            f"Hourly update {now_label} — Feeds today: {feeds} "
+            f"Hourly update {now.strftime('%H:%M')} — Feeds today: {feeds} "
             f"(in {feeds} / out {out_count}), AI-confirmed: {key}, "
-            f"last visit: {last_visit}, stage: {stage}"
+            f"last visit: {last_visit}, stage: {stage}. "
+            f"Last hour: {last_hour_feeds}{baseline}."
         )
         logger.info("Hourly stats: %s", msg)
         self._youtube.post_message(msg)
+
+    @staticmethod
+    def _count_last_hour_entering(today_entries: list[dict], now: datetime) -> int:
+        cutoff_iso = (now - timedelta(hours=1)).isoformat()
+        return sum(
+            1 for e in today_entries
+            if e.get("motion_direction") == "entering"
+            and (e.get("event_start") or "") >= cutoff_iso
+        )
+
+    @staticmethod
+    def _baseline_comparison(today_entries: list[dict], last_hour_feeds: int, now: datetime) -> str:
+        """Returns ' (above today's average)' / ' (below)' / '' depending on contrast."""
+        # First entering event today gives us "active hours" so the average isn't
+        # dragged down by overnight zeros.
+        first_entering: datetime | None = None
+        total_entering = 0
+        for e in today_entries:
+            if e.get("motion_direction") != "entering":
+                continue
+            total_entering += 1
+            if first_entering is None:
+                try:
+                    dt = datetime.fromisoformat(e.get("event_start", ""))
+                    if dt.tzinfo:
+                        dt = dt.astimezone().replace(tzinfo=None)
+                    first_entering = dt
+                except Exception:
+                    continue
+        if first_entering is None or total_entering < 3:
+            return ""  # not enough data to compare meaningfully
+        active_hours = max(1.0, (now - first_entering).total_seconds() / 3600.0)
+        avg = total_entering / active_hours
+        if avg <= 0:
+            return ""
+        ratio = last_hour_feeds / avg
+        if ratio >= 1.3:
+            return f" (above today's avg of {avg:.1f}/hr)"
+        if ratio <= 0.7:
+            return f" (below today's avg of {avg:.1f}/hr)"
+        return f" (around today's avg of {avg:.1f}/hr)"
 
     def _read_today_entries(self) -> list[dict]:
         try:

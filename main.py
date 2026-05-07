@@ -32,6 +32,7 @@ from monitoring.daily_summary import DailySummary
 from monitoring.silent_alarm import SilentAlarm
 from monitoring.hourly_stats import HourlyStats
 from monitoring.milestone_announcer import MilestoneAnnouncer
+from monitoring.chat_responder import ChatResponder
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,7 @@ _daily_summary: DailySummary | None = None
 _silent_alarm: SilentAlarm | None = None
 _hourly_stats: HourlyStats | None = None
 _milestone_announcer: MilestoneAnnouncer | None = None
+_chat_responder: ChatResponder | None = None
 
 # Tracks the current event so on_motion_end can update the log entry
 _current_entry_id: str | None = None
@@ -240,6 +242,8 @@ def _shutdown(sig, frame) -> None:
         _hourly_stats.stop()
     if _milestone_announcer:
         _milestone_announcer.stop()
+    if _chat_responder:
+        _chat_responder.stop()
     logger.info("Goodbye.")
     sys.exit(0)
 
@@ -253,7 +257,7 @@ def main() -> None:
     logger.info("Bird Box Stream Processor starting...")
 
     global _reader, _extractor, _describer, _activity_log, _drive_uploader, _youtube_chapters
-    global _daily_summary, _silent_alarm, _hourly_stats, _milestone_announcer
+    global _daily_summary, _silent_alarm, _hourly_stats, _milestone_announcer, _chat_responder
 
     # Apply any saved tuning / exclusion zones from config/overrides.json
     load_overrides()
@@ -281,6 +285,9 @@ def main() -> None:
 
     _milestone_announcer = MilestoneAnnouncer(_youtube_chapters)
     _milestone_announcer.start()
+
+    _chat_responder = ChatResponder(_youtube_chapters, _describer)
+    _chat_responder.start()
 
     validate_environment()
 
