@@ -38,6 +38,10 @@ You can launch all services (MediaMTX, AI Pipeline, Dashboard, and YouTube Relay
 
 # To stop everything:
 .\stop.ps1
+
+# To hot-reload main.py + dashboard.py while the live stream stays up
+# (mediamtx and the YouTube relay are not touched):
+.\reload.ps1
 ```
 
 ## How to Run (Manual)

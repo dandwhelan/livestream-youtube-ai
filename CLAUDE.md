@@ -14,6 +14,14 @@ This file provides guidance to AI assistants when working with code in this repo
 .\stop.ps1
 ```
 
+**Hot-reload main.py + dashboard.py while the YouTube stream stays up:**
+```
+.\reload.ps1
+```
+Use after pulling code changes that don't touch `mediamtx.yml` or
+`relay_youtube.ps1`. Restarts only the Python services; mediamtx and
+the FFmpeg relay are left running, so YouTube viewers see no blip.
+
 **Manual start (if you prefer separate terminals):**
 
 **Terminal 1 — mediamtx (RTMP relay + YouTube restream):**
