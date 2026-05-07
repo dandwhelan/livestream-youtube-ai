@@ -38,6 +38,10 @@ You can launch all services (MediaMTX, AI Pipeline, Dashboard, and YouTube Relay
 
 # To stop everything:
 .\stop.ps1
+
+# To hot-reload main.py + dashboard.py while the live stream stays up
+# (mediamtx and the YouTube relay are not touched):
+.\reload.ps1
 ```
 
 ## How to Run (Manual)
@@ -82,7 +86,9 @@ python dashboard.py
 - **Automated YouTube Highlights:** Posts real-time chapter markers and chat comments for "Key Moments" (feeding, hatching, etc.).
 - **Live Motion Tuning:** A debug UI at `http://localhost:5001` shows the live MJPEG feed with motion overlays and lets you drag exclusion zones and tune thresholds without restarting.
 - **Auto-Restart Watchdog:** A numeric input on the dashboard (`http://localhost:5000`) sets how often to recycle the YouTube relay (0 = disabled, max 24h) — useful as a defensive reset for long-running streams.
-- **Hourly Chat Update:** A one-line summary posts to YouTube live chat each hour: feeds today (counted from "entering" motion events, which catches every visit even when the AI cooldown skipped one), AI-confirmed key moments, last visit time, and current nesting stage.
+- **Hourly Chat Update:** A one-line summary posts to YouTube live chat each hour: feeds today (counted from "entering" motion events, which catches every visit even when the AI cooldown skipped one), AI-confirmed key moments, last visit time, current nesting stage, and how the last hour compares to today's running average.
+- **Daily Milestone Celebrations:** Posts a one-liner to chat each time today's feed count crosses 25 / 50 / 100 / 150 / 200 / 250 / 300. Resets at midnight, restart-safe (won't re-fire thresholds already passed).
+- **Conversational Chat Replies:** Reads viewer messages and posts a Gemini-generated one-line reply to nest-related questions or @-mentions of the bot. Rate-limited (default 30 replies/day, 60s between replies) and quota-aware.
 
 ## Testing Without Spamming Subscribers
 If you want to test the bot without notifying your YouTube followers:
