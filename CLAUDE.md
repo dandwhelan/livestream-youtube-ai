@@ -72,6 +72,7 @@ Sidecar services started by main.py:
   - DailySummary  → end-of-day Gemini recap posted to YouTube live chat
   - SilentAlarm   → warns to chat if no Key Moment seen for N minutes during daylight
   - HourlyStats   → posts a one-line "Hourly update" to YouTube chat each hour with feeds/AI-confirmed/last-visit/stage
+  - MilestoneAnnouncer → posts a celebration to chat when today's feed count crosses 25/50/100/150/200/250/300
   - debug_server  → motion-tuning UI on http://localhost:5001 (live MJPEG + sliders + exclusion zones)
 ```
 
@@ -106,6 +107,7 @@ Key settings:
 | `daily_summary_enabled` / `daily_summary_hour` | End-of-day recap to live chat |
 | `silent_alarm_enabled` / `silent_alarm_minutes` | Warn if no Key Moment for N minutes during daylight |
 | `hourly_stats_enabled` / `hourly_stats_interval_minutes` | Post a one-line stats update to YouTube live chat every N minutes (default 60). |
+| `daily_milestones_enabled` | Celebrate in chat when today's feed count crosses thresholds (25/50/100/150/200/250/300). On main.py restart, already-passed thresholds are seeded as "announced" so they don't all fire at once. |
 | `stream_restart_hours` | Auto-restart the YouTube relay every N hours (0 = off, max 24). Editable from the dashboard. |
 | `drive_key_moments_subfolder` | Drive folder name for important clips |
 

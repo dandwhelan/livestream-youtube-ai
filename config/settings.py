@@ -106,6 +106,10 @@ class Settings:
     hourly_stats_enabled: bool = True
     hourly_stats_interval_minutes: int = 60
 
+    # Daily milestone celebrations posted to live chat when the feed count
+    # crosses thresholds (25, 50, 100, 150, 200, 250, 300). Resets at midnight.
+    daily_milestones_enabled: bool = True
+
     # Google Drive
     drive_credentials_path: Path = field(
         default_factory=lambda: Path(
