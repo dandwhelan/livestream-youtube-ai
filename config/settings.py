@@ -110,6 +110,15 @@ class Settings:
     # crosses thresholds (25, 50, 100, 150, 200, 250, 300). Resets at midnight.
     daily_milestones_enabled: bool = True
 
+    # Chat responder: read viewer chat and reply to nest-related questions
+    # (or @-mentions) with a Gemini-generated one-liner. Uses extra YouTube
+    # Data API quota for the polling - bump the poll interval up if you see
+    # quota errors. Default poll is conservative (60s).
+    chat_responder_enabled: bool = True
+    chat_responder_poll_seconds: int = 60
+    chat_responder_max_per_day: int = 30
+    chat_responder_min_seconds_between_responses: int = 60
+
     # Google Drive
     drive_credentials_path: Path = field(
         default_factory=lambda: Path(

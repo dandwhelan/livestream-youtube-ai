@@ -356,6 +356,40 @@ class BirdDescriber:
             logger.exception("Daily summary generation failed: %s", e)
             return None
 
+    def respond_to_chat(self, viewer_message: str, viewer_name: str, stats: dict) -> str | None:
+        """Generates a one-line warm reply to a viewer's chat message.
+        `stats` should include feeds_today, ai_confirmed, last_visit, stage."""
+        if not self.client:
+            return None
+        prompt = (
+            "You are the host of a Great Tit nest box live stream replying in YouTube chat. "
+            "A viewer just asked or said something — write ONE short, warm, friendly reply, "
+            "ideally referencing today's nest data when relevant. Keep it under 180 characters. "
+            "No hashtags, no emojis, no @ mentions. Don't pretend to know things you weren't told.\n\n"
+            f"VIEWER ({viewer_name}): {viewer_message}\n\n"
+            "TODAY'S DATA:\n"
+            f"  - feeds today: {stats.get('feeds_today', 0)}\n"
+            f"  - AI-confirmed key moments: {stats.get('ai_confirmed', 0)}\n"
+            f"  - last visit: {stats.get('last_visit', '—')}\n"
+            f"  - current nesting stage: {stats.get('stage', 'unknown')}\n\n"
+            "Reply (one line, no quotes):"
+        )
+        try:
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[prompt],
+                config=types.GenerateContentConfig(temperature=0.7),
+            )
+            text = (response.text or "").strip().strip('"').strip("'")
+            # Gemini sometimes emits a leading "Reply:" or similar — trim that.
+            for prefix in ("Reply:", "REPLY:", "Host:"):
+                if text.startswith(prefix):
+                    text = text[len(prefix):].strip()
+            return text[:200] or None
+        except Exception:
+            logger.exception("Chat response generation failed")
+            return None
+
     def health_check(self) -> bool:
         """Returns True if the client is initialized."""
         if not self.client:
