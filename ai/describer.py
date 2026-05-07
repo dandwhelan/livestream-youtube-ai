@@ -132,17 +132,23 @@ def build_prompt(
         "(a) any chick lying outside the main nest cup or away from its siblings, "
         "(b) any motionless or limp body anywhere in the frame, "
         "(c) damaged or cracked eggs, "
-        "(d) a non-Great-Tit species (sparrow, woodpecker, predator), "
+        "(d) a non-Great-Tit BIRD species entering through the hole (e.g. sparrow, blue tit, woodpecker, predator bird), "
         "(e) parts of a bird visible at the entrance hole. "
-        "If you spot any of these, report it — it matters even if the main action is something else."
+        "If you spot any of these, report it — it matters even if the main action is something else.\n"
+        "IMPORTANT — intruder species: the entrance hole is a small circular opening only large enough for small birds. "
+        "Mice, rodents, or other mammals CANNOT enter this nest box. Do NOT report a mammal intruder under any circumstances. "
+        "Only flag a non-Great-Tit intruder if you can clearly identify it as a bird species."
     )
 
     parts.append(stage_text)
 
     parts.append(
+        "POSITION GUIDANCE: When describing locations, left/right are as seen by the camera looking down into the box "
+        "(i.e. from the viewer's perspective on screen). Double-check before writing 'left' or 'right' — "
+        "a wrong direction confuses viewers who are watching live.\n\n"
         "Output rules — start your response with EXACTLY ONE of these prefixes:\n"
         "  'ALERT: '       → a chick displaced from the nest cup, a motionless/limp body, "
-        "an intruder species, a damaged egg, or any other welfare concern. "
+        "an intruder bird species, a damaged egg, or any other welfare concern. "
         "Follow with a clear, urgent description naming WHERE in the frame the issue is "
         "(e.g. 'bottom-left corner', 'near the entrance'). This stays visible to viewers.\n"
         "  'KEY_MOMENT: '  → feeding, food delivery, dad visiting, eggshell/fecal-sac removal, "
