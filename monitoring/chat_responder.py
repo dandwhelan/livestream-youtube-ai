@@ -191,9 +191,27 @@ class ChatResponder:
                 last_visit = dt.strftime("%H:%M")
             except Exception:
                 pass
+
+        chick_age_days = None
+        if settings.hatch_date:
+            try:
+                hatch = date.fromisoformat(settings.hatch_date)
+                age = (date.today() - hatch).days
+                if 0 <= age <= 30:
+                    chick_age_days = age
+            except ValueError:
+                pass
+
+        chick_counts = [e.get("chick_count") for e in today if e.get("chick_count") is not None]
+        latest_chick_count = chick_counts[-1] if chick_counts else None
+
         return {
             "feeds_today": feeds,
             "ai_confirmed": ai_confirmed,
             "last_visit": last_visit,
             "stage": current_stage(),
+            "chick_age_days": chick_age_days,
+            "latest_chick_count": latest_chick_count,
+            "eggs_total": settings.eggs_total,
+            "known_chick_deaths": settings.known_chick_deaths,
         }

@@ -75,10 +75,20 @@ class HourlyStats:
         baseline = self._baseline_comparison(today, last_hour_feeds, now)
 
         stage = current_stage()
+        chick_age = ""
+        if settings.hatch_date:
+            try:
+                hatch = date.fromisoformat(settings.hatch_date)
+                days = (date.today() - hatch).days
+                if 0 <= days <= 30:
+                    chick_age = f", Day {days} since hatch"
+            except ValueError:
+                pass
+
         msg = (
             f"Hourly update {now.strftime('%H:%M')} — Feeds today: {feeds} "
             f"(in {feeds} / out {out_count}), AI-confirmed: {key}, "
-            f"last visit: {last_visit}, stage: {stage}. "
+            f"last visit: {last_visit}, stage: {stage}{chick_age}. "
             f"Last hour: {last_hour_feeds}{baseline}."
         )
         logger.info("Hourly stats: %s", msg)
