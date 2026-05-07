@@ -30,6 +30,7 @@ from storage.drive_uploader import DriveUploader
 from storage.youtube_chapters import YouTubeChapters
 from monitoring.daily_summary import DailySummary
 from monitoring.silent_alarm import SilentAlarm
+from monitoring.overlay_writer import OverlayWriter
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ _drive_uploader: DriveUploader | None = None
 _youtube_chapters: YouTubeChapters | None = None
 _daily_summary: DailySummary | None = None
 _silent_alarm: SilentAlarm | None = None
+_overlay_writer: OverlayWriter | None = None
 
 # Tracks the current event so on_motion_end can update the log entry
 _current_entry_id: str | None = None
@@ -232,6 +234,8 @@ def _shutdown(sig, frame) -> None:
         _daily_summary.stop()
     if _silent_alarm:
         _silent_alarm.stop()
+    if _overlay_writer:
+        _overlay_writer.stop()
     logger.info("Goodbye.")
     sys.exit(0)
 
@@ -245,7 +249,7 @@ def main() -> None:
     logger.info("Bird Box Stream Processor starting...")
 
     global _reader, _extractor, _describer, _activity_log, _drive_uploader, _youtube_chapters
-    global _daily_summary, _silent_alarm
+    global _daily_summary, _silent_alarm, _overlay_writer
 
     # Apply any saved tuning / exclusion zones from config/overrides.json
     load_overrides()
@@ -267,6 +271,9 @@ def main() -> None:
     _daily_summary.start()
     _silent_alarm = SilentAlarm(_activity_log, _youtube_chapters)
     _silent_alarm.start()
+
+    _overlay_writer = OverlayWriter()
+    _overlay_writer.start()
 
     validate_environment()
 

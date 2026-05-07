@@ -104,7 +104,10 @@ class YouTubeChapters:
         try:
             self._broadcast_id = broadcast["id"]
             snippet = broadcast["snippet"]
-            self._original_description = snippet.get("description", "")
+            # Start each broadcast with a clean description — otherwise chapter
+            # lines from a previous session linger on the new broadcast and
+            # accumulate forever.
+            self._original_description = ""
             self._live_chat_id = snippet.get("liveChatId")
 
             actual_start = snippet.get("actualStartTime")

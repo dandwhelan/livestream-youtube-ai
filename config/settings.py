@@ -8,7 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _OVERRIDES_PATH = Path("config/overrides.json")
-_TUNING_KEYS = ("motion_threshold", "motion_min_area", "motion_min_area_nest", "entrance_zone_bottom")
+_TUNING_KEYS = (
+    "motion_threshold",
+    "motion_min_area",
+    "motion_min_area_nest",
+    "entrance_zone_bottom",
+    "stream_restart_hours",
+    "stream_overlay_enabled",
+)
 
 # Great Tit phenology used for auto-stage transitions when hatch_date is set.
 # Day 0 = hatch day. Negative = pre-hatch.
@@ -113,6 +120,15 @@ class Settings:
         default_factory=lambda: os.environ.get("YOUTUBE_ENABLED", "true").lower() == "true"
     )
     youtube_stream_title: str = "Great Tit Nest"
+
+    # Auto-restart the YouTube relay (FFmpeg) every N hours. 0 = disabled.
+    # The relay reads this from config/overrides.json on each iteration.
+    stream_restart_hours: int = 0
+
+    # Burn the live stats overlay (visits / in / out / key / last seen) into the
+    # video that goes to YouTube via FFmpeg's drawtext filter. Off by default
+    # because it forces re-encoding (libx264) instead of -c copy.
+    stream_overlay_enabled: bool = False
 
 
 settings = Settings()

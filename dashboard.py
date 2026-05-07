@@ -12,9 +12,11 @@ Then open http://localhost:5000
 
 import json
 from pathlib import Path
-from flask import Flask, render_template_string, send_from_directory
+from flask import Flask, render_template_string, request, redirect, send_from_directory, url_for
 
-from config.settings import settings
+from config.settings import settings, load_overrides, save_overrides
+
+load_overrides()
 
 app = Flask(__name__)
 
@@ -53,7 +55,29 @@ HTML = """
     .right-panel::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
   }
 
-  .live-wrap { margin-bottom: 28px; }
+  .live-wrap { margin-bottom: 28px; position: relative; }
+  .video-overlay {
+    position: absolute;
+    top: 36px;            /* clears the LIVE label */
+    left: 12px;
+    color: #000;
+    font-weight: 700;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    font-family: system-ui, sans-serif;
+    text-shadow:
+       1px  1px 0 #fff,
+      -1px  1px 0 #fff,
+       1px -1px 0 #fff,
+      -1px -1px 0 #fff,
+       0    1px 0 #fff,
+       0   -1px 0 #fff,
+       1px  0   0 #fff,
+      -1px  0   0 #fff;
+    pointer-events: none;
+    user-select: none;
+  }
+  .video-overlay .row { white-space: nowrap; }
   .live-label { font-size: 0.75rem; color: #e55; font-weight: 600; letter-spacing: 0.08em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
   .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #e55; animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -99,6 +123,20 @@ HTML = """
   .snapshot-thumb:hover { border-color: #7eb8f7; }
   .empty { color: #555; text-align: center; padding: 60px; }
   .refresh { color: #555; font-size: 0.75rem; margin-top: 24px; }
+
+  .settings-panel { background: #1c1f26; border-radius: 10px; padding: 12px 16px; margin-bottom: 24px; }
+  .settings-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.85rem; color: #aaa; }
+  .settings-form label { color: #aaa; }
+  .settings-form input[type=number] {
+    width: 64px; background: #0f1117; color: #e8e8e8; border: 1px solid #333;
+    border-radius: 6px; padding: 4px 8px; font: inherit;
+  }
+  .settings-form button {
+    background: #2a4a6a; color: #e8e8e8; border: none; border-radius: 6px;
+    padding: 5px 12px; cursor: pointer; font: inherit;
+  }
+  .settings-form button:hover { background: #3a5a7a; }
+  .settings-form .hint { color: #666; font-size: 0.75rem; }
 </style>
 </head>
 <body>
@@ -114,7 +152,28 @@ HTML = """
     <div class="live-wrap">
       <div class="live-label"><span class="live-dot"></span> LIVE</div>
       <video id="video" controls autoplay muted playsinline></video>
+      <div class="video-overlay" id="video-overlay">
+        <div class="row" id="ov-visits">Visits today: —</div>
+        <div class="row" id="ov-inout">In: — &nbsp; Out: —</div>
+        <div class="row" id="ov-key">Key moments: —</div>
+        <div class="row" id="ov-last">Last seen: —</div>
+      </div>
       <div class="offline-msg" id="offline-msg" style="display:none">Stream offline — waiting for camera</div>
+    </div>
+
+    <div class="settings-panel">
+      <form method="post" action="/settings" class="settings-form">
+        <label for="stream_restart_hours">Auto-restart YouTube relay every</label>
+        <input type="number" id="stream_restart_hours" name="stream_restart_hours"
+               min="0" max="24" step="1" value="{{ stream_restart_hours }}">
+        <span>hours</span>
+        <label style="margin-left:16px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" name="stream_overlay_enabled" {% if stream_overlay_enabled %}checked{% endif %}>
+          <span>Burn stats onto YouTube stream</span>
+        </label>
+        <button type="submit">Save</button>
+        <span class="hint">Overlay re-encodes the feed (libx264, ~15–40% of one core). Takes effect on next FFmpeg restart.</span>
+      </form>
     </div>
 
     <div class="stats">
@@ -230,6 +289,20 @@ HTML = """
   }
 
   startPlayer();
+
+  function refreshOverlay() {
+    fetch('/stats.json', { cache: 'no-store' })
+      .then(function(r) { return r.json(); })
+      .then(function(s) {
+        document.getElementById('ov-visits').textContent = 'Visits today: ' + s.visits_today;
+        document.getElementById('ov-inout').textContent  = 'In: ' + s.in_today + '   Out: ' + s.out_today;
+        document.getElementById('ov-key').textContent    = 'Key moments: ' + s.key_today;
+        document.getElementById('ov-last').textContent   = 'Last seen: ' + (s.last_seen || '—');
+      })
+      .catch(function() {});
+  }
+  refreshOverlay();
+  setInterval(refreshOverlay, 10000);
 </script>
 </body>
 </html>
@@ -317,6 +390,57 @@ def serve_snapshot(filename):
     return send_from_directory(settings.snapshots_dir, filename)
 
 
+@app.route("/stats.json")
+def stats_json():
+    from datetime import date, datetime
+    from flask import jsonify
+
+    log_path = settings.activity_log_path
+    try:
+        entries = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
+    except Exception:
+        entries = []
+
+    today_str = date.today().isoformat()
+    today_entries = [e for e in entries if e.get("event_start", "").startswith(today_str)]
+
+    visits_today = len(today_entries)
+    in_today = sum(1 for e in today_entries if e.get("motion_direction") == "entering")
+    out_today = sum(1 for e in today_entries if e.get("motion_direction") == "leaving")
+    key_today = sum(1 for e in today_entries if e.get("is_key_moment"))
+
+    last_seen = None
+    if today_entries:
+        try:
+            dt = datetime.fromisoformat(today_entries[-1].get("event_start", ""))
+            if dt.tzinfo:
+                dt = dt.astimezone()
+            last_seen = dt.strftime("%H:%M")
+        except Exception:
+            pass
+
+    return jsonify({
+        "visits_today": visits_today,
+        "in_today": in_today,
+        "out_today": out_today,
+        "key_today": key_today,
+        "last_seen": last_seen,
+    })
+
+
+@app.route("/settings", methods=["POST"])
+def update_settings():
+    raw = request.form.get("stream_restart_hours", "0").strip()
+    try:
+        hours = int(raw)
+    except ValueError:
+        hours = 0
+    settings.stream_restart_hours = max(0, min(24, hours))
+    settings.stream_overlay_enabled = request.form.get("stream_overlay_enabled") == "on"
+    save_overrides()
+    return redirect(url_for("index"))
+
+
 @app.route("/")
 def index():
     log_path = settings.activity_log_path
@@ -356,6 +480,8 @@ def index():
         today=today,
         key_moments=key_moments,
         heatmap=heatmap,
+        stream_restart_hours=settings.stream_restart_hours,
+        stream_overlay_enabled=settings.stream_overlay_enabled,
     )
 
 

@@ -73,8 +73,16 @@ python dashboard.py
 - **Zone-Based Detection:** High sensitivity for the entrance (top 12%) and low sensitivity for the nest (bottom 88%) to ignore fidgeting while catching every arrival.
 - **Intruder Alert:** Uses Gemini Vision AI to identify if a different species (like a sparrow or predator) has entered the box.
 - **Direction Tracking:** Automatically detects if a bird is "Entering" or "Leaving" based on its movement path.
+- **Chick Count Estimator:** When mum leaves the nest, Gemini re-runs on the latest frame and records how many chicks are visible.
+- **Nesting Stage Awareness:** Set `NEST_HATCH_DATE` in `.env` and the system auto-transitions through Great Tit phenology (`incubation`, `nestling`, `fledging`, `empty`), adjusting the AI prompt and motion thresholds at each stage.
+- **Fledge-Watch:** During the fledging window, motion thresholds drop automatically so the actual fledge moment isn't missed.
 - **Activity Heatmap:** Hourly breakdown of nest activity visible on the local dashboard.
+- **Daily Summary:** A Gemini-generated recap of the day's activity is posted to the live chat each evening.
+- **Silent Alarm:** Warns in chat if no Key Moment has been seen for a configurable number of minutes during daylight.
 - **Automated YouTube Highlights:** Posts real-time chapter markers and chat comments for "Key Moments" (feeding, hatching, etc.).
+- **Live Motion Tuning:** A debug UI at `http://localhost:5001` shows the live MJPEG feed with motion overlays and lets you drag exclusion zones and tune thresholds without restarting.
+- **Auto-Restart Watchdog:** A numeric input on the dashboard (`http://localhost:5000`) sets how often to recycle the YouTube relay (0 = disabled, max 24h) — useful as a defensive reset for long-running streams.
+- **Live Stats Overlay:** A bold-black-with-white-halo overlay in the top-left of the live preview shows visits today, in/out counts, key moments and last-seen time. Tick "Burn stats onto YouTube stream" on the dashboard to also burn the same overlay into the feed YouTube viewers see (uses FFmpeg `drawtext` with re-encoding — see Caveats below).
 
 ## Testing Without Spamming Subscribers
 If you want to test the bot without notifying your YouTube followers:
@@ -82,3 +90,15 @@ If you want to test the bot without notifying your YouTube followers:
 2. Set Visibility to **Unlisted**.
 3. Under stream settings, **uncheck "Notify subscribers"**.
 The AI will successfully post its messages to the hidden live chat!
+
+## Caveats & Limitations
+
+A few things worth knowing before you leave this running unattended:
+
+- **YouTube broadcast cap.** YouTube ends a single live broadcast after ~12 hours by default for most accounts. The auto-restart watchdog described above only recycles the *FFmpeg ingest connection* — it keeps the same broadcast/VOD alive. If you want a fresh broadcast (and a fresh VOD) every N hours, that needs the YouTube Data API to create and bind a new `liveBroadcast` programmatically, which is **not** implemented yet.
+- **YouTube ends the broadcast after ~60s of no incoming video.** The relay's restart loop sleeps for 2s between FFmpeg runs, so brief blips are fine. But if your camera or network is offline for more than a minute, YouTube tears the broadcast down and the relay's reconnects will land on a dead ingest. You'll need to start a new broadcast in YouTube Studio.
+- **PC crashes are not handled by this app.** If Windows itself crashes or reboots, nothing inside this repo can bring it back up. To recover automatically, register `start.ps1` as a Windows Scheduled Task with trigger "At log on" (and enable auto-login if the machine reboots overnight). Disable Windows sleep, USB selective suspend, and Wi-Fi power saving — those are the most common causes of an apparently-fine PC quietly dropping the stream after a few hours.
+- **Live Chat quota is 200 messages/day.** `YouTubeChapters` enforces this hard cap. Once hit, no further Key Moment comments or daily summary will post until the quota resets at midnight Pacific time.
+- **Stream encoding mode.** By default the relay runs `-c copy` (no re-encode, near-zero CPU). Enabling "Burn stats onto YouTube stream" switches to `libx264 -preset veryfast` so the `drawtext` filter can paint stats onto each frame — expect ~15–40% of one CPU core at 1080p and an extra ~1–2s of latency. Toggle it off if the cost bites.
+- **Overlay font path is hard-coded.** `relay_youtube.ps1` uses `C:/Windows/Fonts/arialbd.ttf`. Change it there if you're on a non-Windows host or want a different font.
+- **Gemini API costs scale with motion.** Cooldowns protect against runaway costs, but a very busy nest in `nestling` stage (120s daytime cooldown) can still make ~30 calls/hour. Check your Google AI billing if you leave this running for weeks.
