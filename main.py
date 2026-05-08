@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from config.settings import settings, load_overrides, current_stage
+from config.settings import settings, load_overrides
 from stream.reader import StreamReader
 from stream.motion import MotionDetector
 from stream.debug_server import start as start_debug_server
@@ -34,6 +34,7 @@ from monitoring.hourly_stats import HourlyStats
 from monitoring.milestone_announcer import MilestoneAnnouncer
 from monitoring.chat_responder import ChatResponder
 from monitoring.facts_poster import FactsPoster
+from monitoring import entrance_messages
 
 
 # ---------------------------------------------------------------------------
@@ -92,9 +93,10 @@ _current_motion_info: dict | None = None
 def on_motion_start(frame, timestamp: datetime, buffer_snapshot: list, motion_info: dict = None) -> None:
     """
     Called by MotionDetector on first motion frame (rate-limited).
-    Blocks ~5-15s for AI inference — intentional; acts as cooldown between events.
-    FFmpeg clip recording starts AFTER AI call so the description is ready when
-    we create the log entry.
+    For nest-zone motion: blocks ~5-15s on Gemini for a description.
+    For entrance-zone motion: AI is skipped — motion alone tells us a parent
+    is visiting, and the templated message is posted at motion-end once
+    direction (in/out) is known.
     """
     global _current_entry_id, _current_clip_path, _current_is_key_moment, _current_motion_info
 
@@ -106,26 +108,17 @@ def on_motion_start(frame, timestamp: datetime, buffer_snapshot: list, motion_in
 
     logger.info("=== Motion event started at %s (zone: %s) ===", timestamp.isoformat(), zone)
 
-    # 1. Get AI description (blocking ~10s)
-    description, is_key_moment = _describer.describe_frame(frame)
-    if description:
-        logger.info("Activity: %s", description)
+    # Entrance events are unambiguous from motion + direction tracking, so we
+    # skip the vision call here and post a templated message at motion-end.
+    if zone == "entrance":
+        description = None
+        is_key_moment = False
     else:
-        logger.info("AI description unavailable")
-
-    # Override: during stages where parents are actively visiting the box,
-    # an entrance-zone event is a parent visit by definition and viewers want
-    # commentary. The AI was being too conservative ("just brooding, routine"),
-    # so we stop letting it veto chat posts for these stages — it still writes
-    # the text, we just decide what's chat-worthy.
-    if (
-        not is_key_moment
-        and zone == "entrance"
-        and current_stage() in {"nestling", "incubation", "fledging"}
-        and description
-    ):
-        logger.info("Forcing key-moment: entrance event during %s stage", current_stage())
-        is_key_moment = True
+        description, is_key_moment = _describer.describe_frame(frame)
+        if description:
+            logger.info("Activity: %s", description)
+        else:
+            logger.info("AI description unavailable")
 
     # 2. Save snapshot (useful when mum moves — eggs may be visible)
     snapshot_path = None
@@ -148,7 +141,7 @@ def on_motion_start(frame, timestamp: datetime, buffer_snapshot: list, motion_in
         _current_clip_path = None
         clip_path = None
 
-    # 4. Add YouTube chapter marker
+    # 4. Add YouTube chapter marker (entrance events get theirs at motion-end)
     if description:
         _youtube_chapters.add_chapter(timestamp, description, is_key_moment)
 
@@ -183,6 +176,21 @@ def on_motion_end(last_timestamp: datetime, motion_info: dict = None) -> None:
     # 2. Update log entry with end time and direction
     if _current_entry_id:
         _activity_log.update_event_end(_current_entry_id, last_timestamp, direction)
+
+    # 2a. Entrance events: post templated message + add chapter now that
+    # direction is known. We deliberately skipped Gemini at motion-start
+    # for these — motion + direction tells us everything we need.
+    starting_zone = (_current_motion_info or {}).get("zone")
+    if starting_zone == "entrance":
+        message = entrance_messages.message_for(direction)
+        logger.info("Entrance %s — posting templated message: %s", direction, message)
+        if _current_entry_id:
+            _activity_log.update_event_description(
+                _current_entry_id, ai_description=message, is_key_moment=True
+            )
+        _current_is_key_moment = True
+        if _youtube_chapters:
+            _youtube_chapters.add_chapter(last_timestamp, message, is_key_moment=True)
 
     # 2b. Chick-count estimator: when mum has just left, the chicks should be
     # visible. Re-use Gemini on the latest frame and store the count.

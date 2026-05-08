@@ -91,6 +91,20 @@ class ActivityLog:
                     break
             self._write(entries)
 
+    def update_event_description(
+        self, entry_id: str, ai_description: str, is_key_moment: bool = False
+    ) -> None:
+        """Set/replace the description (and key-moment flag) on an existing entry.
+        Used for entrance events whose templated message is only known at motion-end."""
+        with self._lock:
+            entries = self._read()
+            for e in entries:
+                if e["id"] == entry_id:
+                    e["ai_description"] = ai_description
+                    e["is_key_moment"] = is_key_moment
+                    break
+            self._write(entries)
+
     def update_chick_count(self, entry_id: str, count: int) -> None:
         with self._lock:
             entries = self._read()
