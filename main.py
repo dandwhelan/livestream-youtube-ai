@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from config.settings import settings, load_overrides
+from config.settings import settings, load_overrides, current_stage
 from stream.reader import StreamReader
 from stream.motion import MotionDetector
 from stream.debug_server import start as start_debug_server
@@ -112,6 +112,20 @@ def on_motion_start(frame, timestamp: datetime, buffer_snapshot: list, motion_in
         logger.info("Activity: %s", description)
     else:
         logger.info("AI description unavailable")
+
+    # Override: during stages where parents are actively visiting the box,
+    # an entrance-zone event is a parent visit by definition and viewers want
+    # commentary. The AI was being too conservative ("just brooding, routine"),
+    # so we stop letting it veto chat posts for these stages — it still writes
+    # the text, we just decide what's chat-worthy.
+    if (
+        not is_key_moment
+        and zone == "entrance"
+        and current_stage() in {"nestling", "incubation", "fledging"}
+        and description
+    ):
+        logger.info("Forcing key-moment: entrance event during %s stage", current_stage())
+        is_key_moment = True
 
     # 2. Save snapshot (useful when mum moves — eggs may be visible)
     snapshot_path = None

@@ -29,9 +29,10 @@ STAGE_CONTEXT = {
     "nestling": (
         "STAGE CONTEXT — NESTLING PHASE: The eggs have hatched. "
         "Tiny pink/grey naked chicks with closed eyes may be visible under or beside the mother. "
-        "Both parents now feed the chicks: when you see TWO Great Tits in the box together, "
-        "that is the DAD arriving to feed — flag this as a KEY MOMENT. "
-        "Expect frequent food deliveries (caterpillars, grubs, insects); every successful feeding is a key moment. "
+        "Both parents now feed and brood the chicks. ANY parent in the box during this stage is a KEY MOMENT — "
+        "feeding visits AND brooding visits are both chat-worthy. Do NOT downgrade a parent visit to routine "
+        "just because you can't see food in the beak; caterpillars are tiny and often hidden. "
+        "When you see TWO Great Tits in the box together, that's especially exciting — usually the DAD bringing food. "
         "Other key moments: a chick visibly being fed, eggshells being removed, "
         "fecal sacs being carried out (parental hygiene), or a freshly hatched chick.\n"
         "WELFARE WATCH: Newly hatched chicks are fragile and can be accidentally pushed out of the nest cup "
@@ -230,6 +231,9 @@ class BirdDescriber:
         # _ALERT_REPOST_HOURS to stop the same welfare concern flooding chat.
         self._last_alert_text: str | None = None
         self._last_alert_time: datetime | None = None
+        # Cost control: chick counts are stable hour-to-hour, so we don't need
+        # to spend a vision call on every "leaving" event.
+        self._last_chick_count_time: datetime | None = None
         logger.info("BirdDescriber initialised; current stage: %s", current_stage())
 
     def _recent_context(self, minutes: int = 60, max_items: int = 5) -> str:
@@ -365,9 +369,15 @@ class BirdDescriber:
             return None, False
 
     def count_chicks(self, frame: np.ndarray) -> int | None:
-        """Returns an integer chick count if Gemini can read it, else None."""
+        """Returns an integer chick count if Gemini can read it, else None.
+        Throttled to one call per hour to keep the per-day vision spend down —
+        chick counts don't change minute-to-minute."""
         if not self.client:
             return None
+        if self._last_chick_count_time is not None:
+            since = (datetime.now() - self._last_chick_count_time).total_seconds()
+            if since < 3600:
+                return None
         try:
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(img_rgb)
@@ -381,6 +391,7 @@ class BirdDescriber:
             if not digits:
                 return None
             count = int(digits)
+            self._last_chick_count_time = datetime.now()
             logger.info("Chick count estimate: %d", count)
             return count
         except Exception as e:
@@ -393,7 +404,7 @@ class BirdDescriber:
             return None
         try:
             response = self.client.models.generate_content(
-                model=self.model,
+                model=settings.gemini_model_text,
                 contents=[_summary_prompt(events)],
                 config=types.GenerateContentConfig(temperature=0.6),
             )
@@ -454,7 +465,7 @@ class BirdDescriber:
         )
         try:
             response = self.client.models.generate_content(
-                model=self.model,
+                model=settings.gemini_model_text,
                 contents=[prompt],
                 config=types.GenerateContentConfig(temperature=0.7),
             )

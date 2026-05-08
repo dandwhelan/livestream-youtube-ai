@@ -33,7 +33,7 @@ _STAGE_COOLDOWNS = {
     "nest_building": (300, 3600),
     "egg_laying":    (300, 3600),
     "incubation":    (300, 3600),
-    "nestling":      (120, 1800),  # parents feed every few minutes — sample more often
+    "nestling":      (180, 1800),  # parents feed every few minutes — sample often, but not every 2 min
     "fledging":       (90, 1800),  # don't miss the actual fledge
     "empty":         (600, 3600),
 }
@@ -72,7 +72,10 @@ class Settings:
     gemini_api_key: str = field(
         default_factory=lambda: os.environ.get("GEMINI_API_KEY", "")
     )
-    gemini_model: str = "gemini-2.5-flash"  # Using 2.5-flash as it is fast and cheap
+    gemini_model: str = "gemini-2.5-flash"  # Vision calls (frame description, chick count)
+    # Cheaper model for text-only paths (chat replies, daily summary). Lite is
+    # plenty for short conversational replies and a 400-char recap.
+    gemini_model_text: str = "gemini-2.5-flash-lite"
 
     # Nesting stage drives the AI prompt context, motion thresholds and cooldowns.
     # If hatch_date is set (YYYY-MM-DD via NEST_HATCH_DATE env var), the stage is
