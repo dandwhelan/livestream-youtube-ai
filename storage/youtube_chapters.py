@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from config.settings import settings
@@ -79,6 +79,7 @@ class YouTubeChapters:
         self._chapters: list[tuple[int, str]] = []  # (offset_seconds, label)
         self._live_chat_id: str | None = None
         self._chat_messages_today: int = 0
+        self._chat_messages_today_date: date | None = None
         self._recent_posts: list[tuple[datetime, str]] = []  # (sent_at, message) for dedup
         self._my_channel_id: str | None = None
         self._lock = threading.Lock()
@@ -281,6 +282,14 @@ class YouTubeChapters:
             return False
 
     def _post_live_chat(self, message: str, force: bool = False) -> bool:
+        # The 200/day cap is YouTube's per-day chat quota, so the local counter
+        # must roll over at local midnight — otherwise it just accumulates across
+        # the process lifetime and silently kills posting after a couple of days.
+        today = date.today()
+        if self._chat_messages_today_date != today:
+            self._chat_messages_today = 0
+            self._chat_messages_today_date = today
+
         if self._chat_messages_today >= 200:
             logger.warning("YouTube Chat quota limit reached for today. Skipping message.")
             return False
