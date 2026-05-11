@@ -15,29 +15,31 @@ import threading
 
 
 _ENTERING = (
-    "She's back! Chick check incoming.",
-    "Mum's back at the box.",
-    "Parent just popped in.",
-    "Welcome home — chicks about to get cosy.",
-    "Back already — that was quick!",
-    "She's home, fluffing the nest as usual.",
-    "Mum's just landed at the entrance.",
-    "Parent's back at the box.",
-    "Visit time — settling in for a brood.",
-    "She's in! Cosy time for the little ones.",
+    "Parent back at the box.",
+    "She's in — brood or feed, we'll see.",
+    "Mum's returned. Chicks getting some warmth.",
+    "Back again. Didn't hang about.",
+    "Parent in. Chicks can stop shivering.",
+    "She's home. The brooding shift continues.",
+    "In she comes. Thermoregulation sorted.",
+    "Parent just landed — typical turnaround.",
+    "Mum's back. Nothing unusual so far.",
+    "Another visit. Consistent work from this bird.",
+    "She's back. At this rate she hasn't stopped all morning.",
+    "Parent returned. The chicks will have noticed.",
 )
 
 _LEAVING = (
-    "Off she goes — back soon, hopefully with food!",
-    "Mum's heading out for a forage.",
-    "Parent just slipped out.",
-    "Off again — those chicks won't feed themselves.",
-    "She's away to find the next caterpillar.",
-    "Parent off on a food run.",
-    "Nest is briefly empty — mum's out.",
-    "She's off — fly safe!",
-    "Heading out for snacks.",
-    "Parent leaving the box.",
+    "Off she goes.",
+    "Mum's heading out — foraging run.",
+    "Parent just left.",
+    "Out for another food run.",
+    "She's away. Chicks on their own for now.",
+    "Parent off — back shortly with a caterpillar, most likely.",
+    "Nest is empty. Won't be for long.",
+    "She's out. Average absence is a few minutes at this stage.",
+    "Off again — those caterpillars don't collect themselves.",
+    "Parent heading out. Standard foraging interval.",
 )
 
 _UNKNOWN = (
