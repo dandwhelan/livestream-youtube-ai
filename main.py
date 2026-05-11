@@ -179,9 +179,11 @@ def on_motion_end(last_timestamp: datetime, motion_info: dict = None) -> None:
 
     # 2a. Entrance events: post templated message + add chapter now that
     # direction is known. We deliberately skipped Gemini at motion-start
-    # for these — motion + direction tells us everything we need.
+    # for entrance-triggered events. Departures often start in the nest zone
+    # (mum moves before reaching the hole), so we also catch "leaving" here
+    # even when the initial motion was in the nest.
     starting_zone = (_current_motion_info or {}).get("zone")
-    if starting_zone == "entrance":
+    if starting_zone == "entrance" or direction == "leaving":
         message = entrance_messages.message_for(direction)
         logger.info("Entrance %s — posting templated message: %s", direction, message)
         if _current_entry_id:
