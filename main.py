@@ -34,6 +34,7 @@ from monitoring.hourly_stats import HourlyStats
 from monitoring.milestone_announcer import MilestoneAnnouncer
 from monitoring.chat_responder import ChatResponder
 from monitoring.facts_poster import FactsPoster
+from monitoring.quiet_describer import QuietDescriber
 from monitoring import entrance_messages
 
 
@@ -78,6 +79,7 @@ _hourly_stats: HourlyStats | None = None
 _milestone_announcer: MilestoneAnnouncer | None = None
 _chat_responder: ChatResponder | None = None
 _facts_poster: FactsPoster | None = None
+_quiet_describer: QuietDescriber | None = None
 
 # Tracks the current event so on_motion_end can update the log entry
 _current_entry_id: str | None = None
@@ -272,6 +274,8 @@ def _shutdown(sig, frame) -> None:
         _chat_responder.stop()
     if _facts_poster:
         _facts_poster.stop()
+    if _quiet_describer:
+        _quiet_describer.stop()
     logger.info("Goodbye.")
     sys.exit(0)
 
@@ -286,7 +290,7 @@ def main() -> None:
 
     global _reader, _extractor, _describer, _activity_log, _drive_uploader, _youtube_chapters
     global _daily_summary, _silent_alarm, _hourly_stats, _milestone_announcer, _chat_responder
-    global _facts_poster
+    global _facts_poster, _quiet_describer
 
     # Apply any saved tuning / exclusion zones from config/overrides.json
     load_overrides()
@@ -335,6 +339,15 @@ def main() -> None:
     # Wire stream reader
     _reader = StreamReader(url=settings.camera_rtmp_url)
     _reader.set_frame_callback(detector.process_frame)
+
+    # Quiet describer needs the reader, so it's started after reader is created
+    _quiet_describer = QuietDescriber(
+        _reader,
+        _describer,
+        _youtube_chapters,
+        is_motion_active_fn=lambda: _current_motion_info is not None,
+    )
+    _quiet_describer.start()
 
     # Signal handlers
     signal.signal(signal.SIGINT, _shutdown)

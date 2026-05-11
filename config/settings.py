@@ -135,6 +135,13 @@ class Settings:
     # crosses thresholds (25, 50, 100, 150, 200, 250, 300). Resets at midnight.
     daily_milestones_enabled: bool = True
 
+    # Quiet describer: during quiet periods (no active motion) randomly captures
+    # a frame and posts a passive Gemini description to chat so viewers can see
+    # what the chicks are up to between feeding visits.
+    quiet_describer_enabled: bool = True
+    quiet_describer_min_minutes: int = 10
+    quiet_describer_max_minutes: int = 30
+
     # Chat responder: read viewer chat and reply to nest-related questions
     # (or @-mentions) with a Gemini-generated one-liner. Uses extra YouTube
     # Data API quota for the polling - bump the poll interval up if you see

@@ -94,6 +94,7 @@ def build_prompt(
     last_visit_duration: int | None = None,
     avoid_phrasings: list[str] | None = None,
     dead_chick_note: str = "",
+    quiet_period: bool = False,
 ) -> str:
     stage_text = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["empty"])
 
@@ -150,6 +151,13 @@ def build_prompt(
 
     if dead_chick_note:
         parts.append(dead_chick_note)
+
+    if quiet_period:
+        parts.append(
+            "CONTEXT: No motion has been detected recently — this is a passive observation check "
+            "during a quiet period. Describe the current state of the nest as it is right now. "
+            "Do NOT manufacture drama or imply change. A calm, factual snapshot is the goal."
+        )
 
     parts.append(
         "POSITION GUIDANCE: When describing locations, left/right are as seen by the camera looking down into the box "
@@ -370,6 +378,70 @@ class BirdDescriber:
 
         except Exception as e:
             logger.exception("Gemini AI description failed: %s", e)
+            return None, False
+
+    def describe_quiet_frame(self, frame: np.ndarray) -> tuple[str | None, bool]:
+        """Like describe_frame but signals to Gemini this is a passive quiet-period check."""
+        if not self.client:
+            return None, False
+        try:
+            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb)
+            prompt = build_prompt(
+                current_stage(),
+                time_label=_time_label(datetime.now()),
+                avoid_phrasings=list(self._recent_descriptions),
+                dead_chick_note=settings.dead_chick_note,
+                quiet_period=True,
+            )
+            recent = self._recent_context()
+            if recent:
+                prompt = (
+                    f"{prompt}\n\n"
+                    "ALREADY POSTED RECENTLY (do NOT repeat):\n"
+                    f"{recent}"
+                )
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[pil_img, prompt],
+                config=types.GenerateContentConfig(temperature=0.4),
+            )
+            description = response.text.strip()
+            is_key_moment = False
+            label = "Quiet/Routine"
+
+            if description.startswith("ALERT:"):
+                is_key_moment = True
+                label = "ALERT"
+                description = "⚠️ " + description
+                if self._last_alert_text and self._last_alert_time:
+                    hours_since = (datetime.now() - self._last_alert_time).total_seconds() / 3600
+                    overlap = _word_overlap(description, self._last_alert_text)
+                    if hours_since < _ALERT_REPOST_HOURS and overlap > 0.65:
+                        logger.info(
+                            "Suppressing duplicate ALERT from quiet check (%.1fh ago, %.0f%% overlap)",
+                            hours_since, overlap * 100,
+                        )
+                        return None, False
+                self._last_alert_text = description
+                self._last_alert_time = datetime.now()
+            elif description.startswith("KEY_MOMENT:"):
+                is_key_moment = True
+                label = "KEY MOMENT"
+                description = description.replace("KEY_MOMENT:", "").strip()
+
+            if description:
+                logger.info("Quiet AI Description [%s]: %s", label, description)
+                phrasing = description.replace("⚠️", "").replace("ALERT:", "").strip()
+                if phrasing:
+                    self._recent_descriptions.append(phrasing)
+                    if len(self._recent_descriptions) > self._max_recent_descriptions:
+                        self._recent_descriptions = self._recent_descriptions[-self._max_recent_descriptions:]
+
+            return description or None, is_key_moment
+
+        except Exception as e:
+            logger.exception("Gemini quiet-period description failed: %s", e)
             return None, False
 
     def count_chicks(self, frame: np.ndarray) -> int | None:
