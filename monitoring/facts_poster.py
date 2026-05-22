@@ -43,6 +43,17 @@ _FACTS = [
     "Did you know? Great Tits sometimes cache seeds and insects under bark in autumn and return to eat them later. Their spatial memory for hidden food is surprisingly accurate.",
     "Did you know? A breeding pair defends a territory of roughly 1–2 hectares around their nest, though they travel much further afield to find enough food during nestling stage.",
     "Did you know? If a Great Tit pair successfully raises a first brood, they may attempt a second brood later in the season — sometimes back in the very same nest box!",
+    # Off-topic palate cleansers — keep chat from feeling like a textbook.
+    "Did you know? Octopuses have three hearts and blue blood. Completely unrelated to this nest box, but worth mentioning.",
+    "Did you know? Bananas are berries. Strawberries are not. The Great Tit has no opinion on this.",
+    "Did you know? A day on Venus is longer than its year. Meanwhile here, mum has been on the eggs for what feels like both.",
+    "Did you know? Honey never spoils. Archaeologists have eaten 3,000-year-old honey from Egyptian tombs. Don't try that with the caterpillars.",
+    "Did you know? Wombats produce cube-shaped poo. Great Tit chicks, frankly, can only dream.",
+    "Did you know? There are more stars in the universe than grains of sand on Earth. And yet we're all here watching one bird.",
+    "Did you know? The shortest war in history lasted 38 minutes (Anglo-Zanzibar, 1896). Most of mum's nest breaks are longer.",
+    "Did you know? Cows have best friends and get stressed when separated. Make of that what you will while watching this bird sit alone in a box.",
+    "Did you know? The inventor of the Pringles can is buried in one. No connection to Great Tits whatsoever — just thought you should know.",
+    "Did you know? A group of flamingos is called a 'flamboyance'. A group of Great Tits is, disappointingly, just a 'banditry'. (Yes, really.)",
 ]
 
 

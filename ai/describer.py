@@ -6,7 +6,7 @@ from google.genai import types
 import cv2
 import numpy as np
 
-from config.settings import settings, current_stage
+from config.settings import settings, current_stage, chick_age_days
 
 
 _ALERT_REPOST_HOURS = 2.0  # suppress duplicate ALERTs for this many hours
@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 STAGE_CONTEXT = {
     "nestling": (
         "STAGE CONTEXT — NESTLING PHASE: The eggs have hatched. "
-        "Tiny pink/grey naked chicks with closed eyes may be visible under or beside the mother. "
         "Both parents now feed and brood the chicks. ANY parent in the box during this stage is a KEY MOMENT — "
         "feeding visits AND brooding visits are both chat-worthy. Do NOT downgrade a parent visit to routine "
         "just because you can't see food in the beak; caterpillars are tiny and often hidden. "
@@ -54,8 +53,21 @@ STAGE_CONTEXT = {
         "Key moments are nest material being delivered or shaped into the cup."
     ),
     "fledging": (
-        "STAGE CONTEXT — FLEDGING: Chicks are feathered and nearly ready to leave. "
-        "Key moments are chicks at the entrance, wing-flapping/exercising, or actually fledging out of the box."
+        "STAGE CONTEXT — FLEDGING WINDOW: Chicks are now fully feathered juveniles — often "
+        "as large as the parents — with stubby tails, yellow gape flanges still visible at the "
+        "beak corners, and a duller, greenish-yellow plumage compared to the adults' clean black-and-white head. "
+        "The nest cup is flattened and compacted by trampling; the box looks crowded and messy. "
+        "Key behaviours to watch for and call out: chicks crowding the entrance hole, "
+        "wing-flapping / wing-stretching exercises, head-poking out of the hole and surveying outside, "
+        "preening, jostling for the front-row spot, parents pausing AT the entrance to lure rather than "
+        "entering fully (food-teasing — a strong fledge signal), a chick perched right inside the hole, "
+        "and of course an actual fledge (a chick disappearing through the hole). "
+        "Feeding visits become shorter and more from outside the box. "
+        "Fledging usually happens between Day 16 and Day 22 post-hatch, in the morning, "
+        "and the whole brood often goes within a couple of hours of each other. "
+        "If the box suddenly looks emptier than the previous frame, count carefully — one may already be gone. "
+        "WELFARE WATCH: a chick stuck halfway out of the entrance, a chick visibly weaker/smaller "
+        "than the others and being trampled, or a chick that has died in the cup. Treat as ALERT."
     ),
     "empty": (
         "STAGE CONTEXT — EMPTY/UNKNOWN: Any bird visit is a key moment."
@@ -86,6 +98,54 @@ def _format_duration(seconds: int) -> str:
     return f"{mins} minutes"
 
 
+def _chick_development_block(age_days: int | None) -> str:
+    """Returns an age-specific development context block. None if we can't compute age."""
+    if age_days is None or age_days < 0:
+        return ""
+    if age_days <= 3:
+        appearance = (
+            "Day {d}: chicks are tiny, naked, pink/grey, eyes shut, almost immobile. "
+            "Total weight only a few grams each. Cannot thermoregulate — mum broods almost constantly."
+        ).format(d=age_days)
+    elif age_days <= 7:
+        appearance = (
+            "Day {d}: eyes still closed or just opening. First dark pin-feather quills emerging "
+            "along the wings and back. Still naked-looking overall. Begging gape is bright yellow."
+        ).format(d=age_days)
+    elif age_days <= 11:
+        appearance = (
+            "Day {d}: eyes fully open. Pin feathers bursting into proper feather tracts — "
+            "the chicks suddenly look like little dinosaurs covered in spiky tubes. "
+            "Brooding tapers off; chicks self-regulate temperature from around Day 10."
+        ).format(d=age_days)
+    elif age_days <= 14:
+        appearance = (
+            "Day {d}: chicks are now visibly feathered, recognisably bird-shaped, and almost "
+            "adult-sized. Yellow gape flanges still flashy at the beak corners. They preen, "
+            "shuffle, and squabble. Parent feeding visits peak at hundreds per day."
+        ).format(d=age_days)
+    elif age_days <= 17:
+        appearance = (
+            "Day {d}: PRE-FLEDGE — chicks are fully feathered juveniles, often the size of "
+            "the parents. Expect head-poking from the entrance hole, wing-flapping exercises, "
+            "preening sessions, and jostling for the front-row spot. The nest cup is trampled flat. "
+            "Any chick appearing AT the entrance is chat-worthy — fledging could begin any morning now."
+        ).format(d=age_days)
+    elif age_days <= 22:
+        appearance = (
+            "Day {d}: FLEDGE WINDOW WIDE OPEN. Parents may pause at the entrance with food "
+            "to coax chicks out rather than feeding inside. Each visible disappearance through "
+            "the hole could be the actual fledge. Whole brood often departs within a couple of hours, "
+            "typically in the morning."
+        ).format(d=age_days)
+    else:
+        appearance = (
+            "Day {d}: likely post-fledge. Box may be empty or near-empty. Any bird visible "
+            "is notable — could be a late fledgling, a parent returning, or a roost-checking adult."
+        ).format(d=age_days)
+    return "CHICK DEVELOPMENT: " + appearance
+
+
 def build_prompt(
     stage: str,
     *,
@@ -95,20 +155,35 @@ def build_prompt(
     avoid_phrasings: list[str] | None = None,
     dead_chick_note: str = "",
     quiet_period: bool = False,
+    chick_age: int | None = None,
 ) -> str:
     stage_text = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["empty"])
 
     persona = (
-        "You are the host of a Great Tit nest box live stream. "
-        "Your tone is friendly but grounded — knowledgeable, occasionally dry, never gushing. "
+        "You are the host of a Great Tit nest box live stream, but you're also a tired stand-up "
+        "comedian who has been narrating the same bird coming through the same hole for weeks. "
+        "Your tone is dry, sarcastic, often unhinged, and very online. Treat the nest box like "
+        "it's reality TV: gossip about the bird, project motivations, invent grudges, narrate "
+        "in the third person, do bits. Bored is fine. Petty is fine. Mildly unprofessional is fine.\n"
+        "VARIETY IS THE WHOLE JOB. Birds going in and out is repetitive — YOU have to make each "
+        "line feel different. Rotate freely between these registers and DO NOT do the same one twice "
+        "in a row:\n"
+        "  - dry sports commentary ('And she's back. Eighth caterpillar this hour. The dad is statistically a ghost.')\n"
+        "  - sarcastic non-sequitur ('Another visit. Meanwhile in the rest of the world, the housing market is still a mess.')\n"
+        "  - random off-topic aside the bird obviously didn't ask for "
+        "(weather, traffic, Mondays, mild conspiracy theories, the price of eggs as a joke, "
+        "what the bird's astrological sign clearly is, late-stage capitalism, the chat being too quiet)\n"
+        "  - pretend-overheard inner monologue from the bird ('She's thinking: not again. Not THIS caterpillar guy.')\n"
+        "  - mock-newsreader bulletin ('Breaking: small bird enters small hole. More at 11.')\n"
+        "  - a flat one-word reaction ('Again.' / 'Cool.' / 'Sure.')\n"
+        "  - genuine warmth — but rationed, so it actually lands when you use it.\n"
+        "Tangents are encouraged. About 1 in 4 lines should barely mention the bird at all and "
+        "instead be a random unrelated take that just happens to coincide with a wing flap. "
         "BANNED WORDS — never use: snuggle, cuddle, cosy, lovely, sweet, adorable, "
-        "'little ones', 'tiny ones', toasty, snug. "
-        "Say 'chicks' or 'nestlings' (not 'little ones'). Say 'brooding' or 'warming' (not 'snuggling'). "
-        "When it adds real context, weave in a brief biological fact — e.g. typical visit rate, "
-        "what the behaviour means, chick development stage — but don't force it every time. "
-        "For routine or repetitive events, a dry observation is fine: "
-        "'Back again. She hasn't stopped all morning.' or 'Another delivery. Fourth this hour.' "
-        "Keep it punchy: ideally one short sentence. Avoid exclamation marks on every line."
+        "'little ones', 'tiny ones', toasty, snug, heartwarming, precious. "
+        "Say 'chicks' or 'nestlings' (not 'little ones'). "
+        "Facts are still allowed when one genuinely fits, but not every line — you are entertainment first, "
+        "encyclopaedia second. One sentence, maybe two. No emoji. No hashtags. Exclamation marks are rationed."
     )
 
     parts = [persona]
@@ -149,6 +224,10 @@ def build_prompt(
 
     parts.append(stage_text)
 
+    dev_block = _chick_development_block(chick_age)
+    if dev_block:
+        parts.append(dev_block)
+
     if dead_chick_note:
         parts.append(dead_chick_note)
 
@@ -170,8 +249,11 @@ def build_prompt(
         "(e.g. 'bottom-left corner', 'near the entrance'). This stays visible to viewers.\n"
         "  'KEY_MOMENT: '  → feeding, food delivery, dad visiting, eggshell/fecal-sac removal, "
         "hatching, first activity of the day, or anything else genuinely chat-worthy. "
-        "Follow with a clear, grounded comment in the host's voice — factual where possible, dry humour fine.\n"
-        "  (no prefix)     → routine activity (mum brooding, sitting still, minor adjustments)."
+        "Follow with a comment in the host's voice — go for the joke, the sarcastic aside, or the "
+        "weird non-bird tangent. Do NOT default to 'A parent has returned with food.' That's the "
+        "boring version. Make it land.\n"
+        "  (no prefix)     → routine activity (mum brooding, sitting still, minor adjustments). "
+        "Routine doesn't mean dull — this is your chance for the random off-topic takes."
     )
 
     # Anti-repetition
@@ -213,10 +295,12 @@ def _summary_prompt(events: list[dict]) -> str:
     return (
         "You are writing the daily wrap-up for a Great Tit nest box live stream. "
         f"Today's stage is '{current_stage()}'. "
-        "Below is the chronological event log for the day. Write a short, factual "
-        "recap (≤400 characters, suitable for YouTube live chat) covering: "
+        "Below is the chronological event log for the day. Write a short recap "
+        "(≤400 characters, suitable for YouTube live chat) covering: "
         "total feeding visits, the longest quiet gap, and one notable highlight. "
-        "Do not invent details that aren't in the log.\n\n"
+        "Tone: dry, lightly sarcastic late-night-host energy — like a sports recap "
+        "for a bird nobody asked about. Do not invent details that aren't in the log. "
+        "No hashtags, no emojis.\n\n"
         f"EVENTS:\n{log_text}"
     )
 
@@ -312,6 +396,7 @@ class BirdDescriber:
                 last_visit_duration=last_duration,
                 avoid_phrasings=list(self._recent_descriptions),
                 dead_chick_note=settings.dead_chick_note,
+                chick_age=chick_age_days(),
             )
             recent = self._recent_context()
             if recent:
@@ -334,7 +419,7 @@ class BirdDescriber:
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=[pil_img, prompt],
-                config=types.GenerateContentConfig(temperature=0.4),
+                config=types.GenerateContentConfig(temperature=0.95),
             )
 
             description = response.text.strip()
@@ -393,6 +478,7 @@ class BirdDescriber:
                 avoid_phrasings=list(self._recent_descriptions),
                 dead_chick_note=settings.dead_chick_note,
                 quiet_period=True,
+                chick_age=chick_age_days(),
             )
             recent = self._recent_context()
             if recent:
@@ -404,7 +490,7 @@ class BirdDescriber:
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=[pil_img, prompt],
-                config=types.GenerateContentConfig(temperature=0.4),
+                config=types.GenerateContentConfig(temperature=0.95),
             )
             description = response.text.strip()
             is_key_moment = False
@@ -515,12 +601,14 @@ class BirdDescriber:
         )
 
         prompt = (
-            "You are the host of a Great Tit nest box live stream replying in YouTube chat. "
-            "A viewer just asked or said something — write ONE short, grounded reply. "
-            "Be friendly but factual; avoid gushing. Reference today's nest data when relevant. "
+            "You are the host of a Great Tit nest box live stream replying in YouTube chat — "
+            "dry, witty, occasionally sarcastic, never gushing. A viewer just said something. "
+            "Write ONE short reply with personality: a joke, a sly aside, or a deadpan answer "
+            "is all fair game. You can briefly go off-topic if it lands. "
+            "Reference today's nest data when it actually helps the answer (not as filler). "
             "Keep it under 180 characters. No hashtags, no emojis, no @ mentions. "
-            "Don't pretend to know things you weren't told. "
-            "Vary your phrasing — avoid leading with the feed count every time.\n\n"
+            "Don't invent facts. Vary your phrasing — never lead with the feed count two replies "
+            "in a row.\n\n"
             f"VIEWER ({viewer_name}): {viewer_message}\n\n"
             "TODAY'S DATA:\n"
             f"  - feeds today: {stats.get('feeds_today', 0)}\n"
@@ -536,6 +624,13 @@ class BirdDescriber:
             "  - Older chicks back up to the entrance and eject the sac out of the hole.\n"
             "  - Parents make 400-1000 feeding trips per day at peak nestling stage.\n"
             "  - Chicks cannot regulate temperature until ~day 10, hence brooding.\n"
+            "  - Eyes open around Day 5-7; pin feathers burst around Day 8-11.\n"
+            "  - By Day 14 chicks are visibly feathered, almost adult-sized, with bright yellow gape flanges.\n"
+            "  - Great Tit chicks fledge between Day 16 and Day 22 post-hatch, usually in the morning.\n"
+            "  - The whole brood typically fledges within a couple of hours of each other.\n"
+            "  - Pre-fledge behaviours: head-poking out the hole, wing-flapping, preening, jostling at the entrance.\n"
+            "  - After fledging, parents continue feeding the juveniles outside the nest for 2-3 weeks.\n"
+            "  - Fledglings can fly weakly on day one and improve fast — they don't return to the box.\n"
             "  - Great Tit lifespan: typically 2-3 years in the wild; UK record is 15 years.\n"
             "  - Adults weigh just 14-22g — about the weight of a few coins.\n\n"
             "Reply (one line, no quotes):"

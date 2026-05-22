@@ -200,6 +200,17 @@ def current_stage() -> str:
     return settings.nesting_stage
 
 
+def chick_age_days() -> int | None:
+    """Days since hatch (Day 0 = hatch day), or None if hatch_date isn't set."""
+    if not settings.hatch_date:
+        return None
+    try:
+        hatch = date.fromisoformat(settings.hatch_date)
+        return (date.today() - hatch).days
+    except ValueError:
+        return None
+
+
 def cooldown_seconds(now: datetime | None = None) -> int:
     """AI cooldown for the current stage and time of day."""
     now = now or datetime.now()
