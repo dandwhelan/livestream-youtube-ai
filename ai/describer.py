@@ -6,7 +6,7 @@ from google.genai import types
 import cv2
 import numpy as np
 
-from config.settings import settings, current_stage
+from config.settings import settings, current_stage, chick_age_days
 
 
 _ALERT_REPOST_HOURS = 2.0  # suppress duplicate ALERTs for this many hours
@@ -28,7 +28,6 @@ logger = logging.getLogger(__name__)
 STAGE_CONTEXT = {
     "nestling": (
         "STAGE CONTEXT — NESTLING PHASE: The eggs have hatched. "
-        "Tiny pink/grey naked chicks with closed eyes may be visible under or beside the mother. "
         "Both parents now feed and brood the chicks. ANY parent in the box during this stage is a KEY MOMENT — "
         "feeding visits AND brooding visits are both chat-worthy. Do NOT downgrade a parent visit to routine "
         "just because you can't see food in the beak; caterpillars are tiny and often hidden. "
@@ -54,8 +53,21 @@ STAGE_CONTEXT = {
         "Key moments are nest material being delivered or shaped into the cup."
     ),
     "fledging": (
-        "STAGE CONTEXT — FLEDGING: Chicks are feathered and nearly ready to leave. "
-        "Key moments are chicks at the entrance, wing-flapping/exercising, or actually fledging out of the box."
+        "STAGE CONTEXT — FLEDGING WINDOW: Chicks are now fully feathered juveniles — often "
+        "as large as the parents — with stubby tails, yellow gape flanges still visible at the "
+        "beak corners, and a duller, greenish-yellow plumage compared to the adults' clean black-and-white head. "
+        "The nest cup is flattened and compacted by trampling; the box looks crowded and messy. "
+        "Key behaviours to watch for and call out: chicks crowding the entrance hole, "
+        "wing-flapping / wing-stretching exercises, head-poking out of the hole and surveying outside, "
+        "preening, jostling for the front-row spot, parents pausing AT the entrance to lure rather than "
+        "entering fully (food-teasing — a strong fledge signal), a chick perched right inside the hole, "
+        "and of course an actual fledge (a chick disappearing through the hole). "
+        "Feeding visits become shorter and more from outside the box. "
+        "Fledging usually happens between Day 16 and Day 22 post-hatch, in the morning, "
+        "and the whole brood often goes within a couple of hours of each other. "
+        "If the box suddenly looks emptier than the previous frame, count carefully — one may already be gone. "
+        "WELFARE WATCH: a chick stuck halfway out of the entrance, a chick visibly weaker/smaller "
+        "than the others and being trampled, or a chick that has died in the cup. Treat as ALERT."
     ),
     "empty": (
         "STAGE CONTEXT — EMPTY/UNKNOWN: Any bird visit is a key moment."
@@ -86,6 +98,54 @@ def _format_duration(seconds: int) -> str:
     return f"{mins} minutes"
 
 
+def _chick_development_block(age_days: int | None) -> str:
+    """Returns an age-specific development context block. None if we can't compute age."""
+    if age_days is None or age_days < 0:
+        return ""
+    if age_days <= 3:
+        appearance = (
+            "Day {d}: chicks are tiny, naked, pink/grey, eyes shut, almost immobile. "
+            "Total weight only a few grams each. Cannot thermoregulate — mum broods almost constantly."
+        ).format(d=age_days)
+    elif age_days <= 7:
+        appearance = (
+            "Day {d}: eyes still closed or just opening. First dark pin-feather quills emerging "
+            "along the wings and back. Still naked-looking overall. Begging gape is bright yellow."
+        ).format(d=age_days)
+    elif age_days <= 11:
+        appearance = (
+            "Day {d}: eyes fully open. Pin feathers bursting into proper feather tracts — "
+            "the chicks suddenly look like little dinosaurs covered in spiky tubes. "
+            "Brooding tapers off; chicks self-regulate temperature from around Day 10."
+        ).format(d=age_days)
+    elif age_days <= 14:
+        appearance = (
+            "Day {d}: chicks are now visibly feathered, recognisably bird-shaped, and almost "
+            "adult-sized. Yellow gape flanges still flashy at the beak corners. They preen, "
+            "shuffle, and squabble. Parent feeding visits peak at hundreds per day."
+        ).format(d=age_days)
+    elif age_days <= 17:
+        appearance = (
+            "Day {d}: PRE-FLEDGE — chicks are fully feathered juveniles, often the size of "
+            "the parents. Expect head-poking from the entrance hole, wing-flapping exercises, "
+            "preening sessions, and jostling for the front-row spot. The nest cup is trampled flat. "
+            "Any chick appearing AT the entrance is chat-worthy — fledging could begin any morning now."
+        ).format(d=age_days)
+    elif age_days <= 22:
+        appearance = (
+            "Day {d}: FLEDGE WINDOW WIDE OPEN. Parents may pause at the entrance with food "
+            "to coax chicks out rather than feeding inside. Each visible disappearance through "
+            "the hole could be the actual fledge. Whole brood often departs within a couple of hours, "
+            "typically in the morning."
+        ).format(d=age_days)
+    else:
+        appearance = (
+            "Day {d}: likely post-fledge. Box may be empty or near-empty. Any bird visible "
+            "is notable — could be a late fledgling, a parent returning, or a roost-checking adult."
+        ).format(d=age_days)
+    return "CHICK DEVELOPMENT: " + appearance
+
+
 def build_prompt(
     stage: str,
     *,
@@ -95,6 +155,7 @@ def build_prompt(
     avoid_phrasings: list[str] | None = None,
     dead_chick_note: str = "",
     quiet_period: bool = False,
+    chick_age: int | None = None,
 ) -> str:
     stage_text = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["empty"])
 
@@ -162,6 +223,10 @@ def build_prompt(
     )
 
     parts.append(stage_text)
+
+    dev_block = _chick_development_block(chick_age)
+    if dev_block:
+        parts.append(dev_block)
 
     if dead_chick_note:
         parts.append(dead_chick_note)
@@ -331,6 +396,7 @@ class BirdDescriber:
                 last_visit_duration=last_duration,
                 avoid_phrasings=list(self._recent_descriptions),
                 dead_chick_note=settings.dead_chick_note,
+                chick_age=chick_age_days(),
             )
             recent = self._recent_context()
             if recent:
@@ -412,6 +478,7 @@ class BirdDescriber:
                 avoid_phrasings=list(self._recent_descriptions),
                 dead_chick_note=settings.dead_chick_note,
                 quiet_period=True,
+                chick_age=chick_age_days(),
             )
             recent = self._recent_context()
             if recent:
@@ -557,6 +624,13 @@ class BirdDescriber:
             "  - Older chicks back up to the entrance and eject the sac out of the hole.\n"
             "  - Parents make 400-1000 feeding trips per day at peak nestling stage.\n"
             "  - Chicks cannot regulate temperature until ~day 10, hence brooding.\n"
+            "  - Eyes open around Day 5-7; pin feathers burst around Day 8-11.\n"
+            "  - By Day 14 chicks are visibly feathered, almost adult-sized, with bright yellow gape flanges.\n"
+            "  - Great Tit chicks fledge between Day 16 and Day 22 post-hatch, usually in the morning.\n"
+            "  - The whole brood typically fledges within a couple of hours of each other.\n"
+            "  - Pre-fledge behaviours: head-poking out the hole, wing-flapping, preening, jostling at the entrance.\n"
+            "  - After fledging, parents continue feeding the juveniles outside the nest for 2-3 weeks.\n"
+            "  - Fledglings can fly weakly on day one and improve fast — they don't return to the box.\n"
             "  - Great Tit lifespan: typically 2-3 years in the wild; UK record is 15 years.\n"
             "  - Adults weigh just 14-22g — about the weight of a few coins.\n\n"
             "Reply (one line, no quotes):"
