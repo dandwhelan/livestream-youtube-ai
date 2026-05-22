@@ -35,7 +35,6 @@ from monitoring.milestone_announcer import MilestoneAnnouncer
 from monitoring.chat_responder import ChatResponder
 from monitoring.facts_poster import FactsPoster
 from monitoring.quiet_describer import QuietDescriber
-from monitoring import entrance_messages
 
 
 # ---------------------------------------------------------------------------
@@ -179,22 +178,10 @@ def on_motion_end(last_timestamp: datetime, motion_info: dict = None) -> None:
     if _current_entry_id:
         _activity_log.update_event_end(_current_entry_id, last_timestamp, direction)
 
-    # 2a. Entrance events: post templated message + add chapter now that
-    # direction is known. We deliberately skipped Gemini at motion-start
-    # for entrance-triggered events. Departures often start in the nest zone
-    # (mum moves before reaching the hole), so we also catch "leaving" here
-    # even when the initial motion was in the nest.
-    starting_zone = (_current_motion_info or {}).get("zone")
-    if starting_zone == "entrance" or direction == "leaving":
-        message = entrance_messages.message_for(direction)
-        logger.info("Entrance %s — posting templated message: %s", direction, message)
-        if _current_entry_id:
-            _activity_log.update_event_description(
-                _current_entry_id, ai_description=message, is_key_moment=True
-            )
-        _current_is_key_moment = True
-        if _youtube_chapters:
-            _youtube_chapters.add_chapter(last_timestamp, message, is_key_moment=True)
+    # 2a. Entrance templated posts disabled: at late-nestling / pre-fledge
+    # the chicks themselves move through the entrance zone, so every chick
+    # shuffle was being announced as a parent visit. Event is still logged
+    # with direction; we just don't post to chat from motion alone.
 
     # 2b. Chick-count estimator: when mum has just left, the chicks should be
     # visible. Re-use Gemini on the latest frame and store the count.
