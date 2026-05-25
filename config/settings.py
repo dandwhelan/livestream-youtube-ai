@@ -80,7 +80,7 @@ class Settings:
     # Nesting stage drives the AI prompt context, motion thresholds and cooldowns.
     # If hatch_date is set (YYYY-MM-DD via NEST_HATCH_DATE env var), the stage is
     # derived automatically from days since hatch and this manual value is ignored.
-    nesting_stage: str = "nestling"
+    nesting_stage: str = "fledging"
     hatch_date: str = field(
         default_factory=lambda: os.environ.get("NEST_HATCH_DATE", "")
     )
@@ -104,12 +104,12 @@ class Settings:
     # to stop alerting or commenting on it. Empty string = no override.
     dead_chick_note: str = (
         "CONFIRMED DEATH — DO NOT MENTION: There is a dead chick lying in the "
-        "bottom-left corner of the box. Its death has already been confirmed by "
+        "middle of the nest. Its death has already been confirmed by "
         "the streamer. Do NOT alert about it. Do NOT describe it as resting, "
         "sleeping, displaced, or 'outside the nest cup'. Do NOT mention it at "
         "all — not as background detail, not as context, not as a welfare concern. "
-        "It is not relevant to your commentary. Focus only on the living chicks "
-        "and the parent birds."
+        "It is not relevant to your commentary. There are 4 LIVING chicks in the box — "
+        "focus only on them and the parent birds."
     )
 
     # Did You Know facts poster: posts a rotating Great Tit fact to live chat.
