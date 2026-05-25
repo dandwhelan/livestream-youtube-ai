@@ -71,9 +71,6 @@ class HourlyStats:
                 last_visit_dt = None
 
         now = datetime.now()
-        last_hour_feeds = self._count_last_hour_entering(today, now)
-        baseline = self._baseline_comparison(today, last_hour_feeds, now)
-
         stage = current_stage()
         chick_age = ""
         if settings.hatch_date:
@@ -81,16 +78,31 @@ class HourlyStats:
                 hatch = date.fromisoformat(settings.hatch_date)
                 days = (date.today() - hatch).days
                 if 0 <= days <= 30:
-                    chick_age = f", Day {days} since hatch"
+                    chick_age = f" (Day {days})"
             except ValueError:
                 pass
 
-        msg = (
-            f"Hourly update {now.strftime('%H:%M')} — Feeds today: {feeds} "
-            f"(in {feeds} / out {out_count}), AI-confirmed: {key}, "
-            f"last visit: {last_visit}, stage: {stage}{chick_age}. "
-            f"Last hour: {last_hour_feeds}{baseline}."
-        )
+        if stage == "fledging":
+            # During fledging, exits are the story — not feeding visits.
+            # Pull the latest AI chick count from today's log.
+            chick_counts = [e.get("chick_count") for e in today if e.get("chick_count") is not None]
+            latest_count = chick_counts[-1] if chick_counts else None
+            count_str = f", last chick count: {latest_count}" if latest_count is not None else ""
+            msg = (
+                f"Fledge watch {now.strftime('%H:%M')}{chick_age} — "
+                f"Exits today: {out_count} | Entrances: {feeds} | "
+                f"AI-confirmed key moments: {key}{count_str}. "
+                f"Last activity: {last_visit}. Stay close — it could happen any time."
+            )
+        else:
+            last_hour_feeds = self._count_last_hour_entering(today, now)
+            baseline = self._baseline_comparison(today, last_hour_feeds, now)
+            msg = (
+                f"Hourly update {now.strftime('%H:%M')} — Feeds today: {feeds} "
+                f"(in {feeds} / out {out_count}), AI-confirmed: {key}, "
+                f"last visit: {last_visit}, stage: {stage}{chick_age}. "
+                f"Last hour: {last_hour_feeds}{baseline}."
+            )
         logger.info("Hourly stats: %s", msg)
         self._youtube.post_message(msg)
 

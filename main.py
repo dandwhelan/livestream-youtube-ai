@@ -36,6 +36,7 @@ from monitoring.chat_responder import ChatResponder
 from monitoring.facts_poster import FactsPoster
 from monitoring.quiet_describer import QuietDescriber
 from monitoring import entrance_messages
+from monitoring.fledge_watcher import FledgeWatcher
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +81,7 @@ _milestone_announcer: MilestoneAnnouncer | None = None
 _chat_responder: ChatResponder | None = None
 _facts_poster: FactsPoster | None = None
 _quiet_describer: QuietDescriber | None = None
+_fledge_watcher: FledgeWatcher | None = None
 
 # Tracks the current event so on_motion_end can update the log entry
 _current_entry_id: str | None = None
@@ -276,6 +278,8 @@ def _shutdown(sig, frame) -> None:
         _facts_poster.stop()
     if _quiet_describer:
         _quiet_describer.stop()
+    if _fledge_watcher:
+        _fledge_watcher.stop()
     logger.info("Goodbye.")
     sys.exit(0)
 
@@ -290,7 +294,7 @@ def main() -> None:
 
     global _reader, _extractor, _describer, _activity_log, _drive_uploader, _youtube_chapters
     global _daily_summary, _silent_alarm, _hourly_stats, _milestone_announcer, _chat_responder
-    global _facts_poster, _quiet_describer
+    global _facts_poster, _quiet_describer, _fledge_watcher
 
     # Apply any saved tuning / exclusion zones from config/overrides.json
     load_overrides()
@@ -324,6 +328,9 @@ def main() -> None:
 
     _facts_poster = FactsPoster(_youtube_chapters)
     _facts_poster.start()
+
+    _fledge_watcher = FledgeWatcher(_youtube_chapters)
+    _fledge_watcher.start()
 
     validate_environment()
 
