@@ -17,7 +17,7 @@ import threading
 from datetime import date
 from pathlib import Path
 
-from config.settings import settings
+from config.settings import settings, current_stage
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,9 @@ class MilestoneAnnouncer:
         if today != self._last_check_date:
             self._announced_today.clear()
             self._last_check_date = today
+
+        if current_stage() == "fledging":
+            return  # feed milestones are meaningless during fledge week
 
         feeds = self._count_feeds_today(today)
         for threshold in sorted(_MILESTONES):
