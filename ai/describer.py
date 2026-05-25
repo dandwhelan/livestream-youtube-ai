@@ -53,9 +53,10 @@ STAGE_CONTEXT = {
         "Key moments are nest material being delivered or shaped into the cup."
     ),
     "fledging": (
-        "STAGE CONTEXT — FLEDGING WINDOW: Chicks are now fully feathered juveniles — often "
-        "as large as the parents — with stubby tails, yellow gape flanges still visible at the "
-        "beak corners, and a duller, greenish-yellow plumage compared to the adults' clean black-and-white head. "
+        "STAGE CONTEXT — FLEDGING WINDOW: There are 4 LIVING chicks in this box. "
+        "They are now fully feathered juveniles — often as large as the parents — with stubby tails, "
+        "yellow gape flanges still visible at the beak corners, and a duller, greenish-yellow plumage "
+        "compared to the adults' clean black-and-white head. "
         "The nest cup is flattened and compacted by trampling; the box looks crowded and messy. "
         "Key behaviours to watch for and call out: chicks crowding the entrance hole, "
         "wing-flapping / wing-stretching exercises, head-poking out of the hole and surveying outside, "
@@ -65,9 +66,10 @@ STAGE_CONTEXT = {
         "Feeding visits become shorter and more from outside the box. "
         "Fledging usually happens between Day 16 and Day 22 post-hatch, in the morning, "
         "and the whole brood often goes within a couple of hours of each other. "
-        "If the box suddenly looks emptier than the previous frame, count carefully — one may already be gone. "
-        "WELFARE WATCH: a chick stuck halfway out of the entrance, a chick visibly weaker/smaller "
-        "than the others and being trampled, or a chick that has died in the cup. Treat as ALERT."
+        "COUNTING: There are 4 living chicks. If you can only see 3, one may have already fledged — "
+        "that is a KEY_MOMENT. If you can only see 2 or fewer, multiple may have fledged — huge news. "
+        "WELFARE WATCH: a chick stuck halfway out of the entrance, or a chick visibly weaker/smaller "
+        "than the others and being trampled. Treat as ALERT."
     ),
     "empty": (
         "STAGE CONTEXT — EMPTY/UNKNOWN: Any bird visit is a key moment."
